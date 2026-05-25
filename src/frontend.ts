@@ -1,7 +1,7 @@
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { EngineMode, MeguminProfile, RpcResponse } from "./types";
 import { DEFAULT_PROFILE, clone, mergeProfile } from "./defaults";
-import { RESOLUTIONS } from "./image-data";
+import { KAZUMA_PLACEHOLDERS, RESOLUTIONS } from "./image-data";
 
 type Ctx = SpindleFrontendContext & Record<string, any>;
 
@@ -10,12 +10,16 @@ type AppState = {
   visible: boolean;
   saving: boolean;
   activeTab: number;
+  devMode: boolean;
+  engineFilter: string;
+  styleFilter: string;
   context: any;
   profile: MeguminProfile;
   logic: any;
   engines: EngineMode[];
   customEngines: EngineMode[];
   imageConnections: any[];
+  uiAssets: { heroImages: string[]; mascotImage?: string };
   status: string;
 };
 
@@ -32,27 +36,34 @@ const state: AppState = {
   visible: false,
   saving: false,
   activeTab: 0,
+  devMode: false,
+  engineFilter: "all",
+  styleFilter: "direct",
   context: null,
   profile: clone(DEFAULT_PROFILE),
   logic: null,
   engines: [],
   customEngines: [],
   imageConnections: [],
+  uiAssets: { heroImages: [] },
   status: "Loading..."
 };
 
 const tabs = [
-  { title: "Engines", short: "Eng", render: renderEngines },
-  { title: "Style", short: "Style", render: renderStyle },
-  { title: "Add-ons", short: "Add", render: renderAddons },
-  { title: "Output", short: "Out", render: renderOutput },
-  { title: "Story", short: "Story", render: renderStory },
-  { title: "Ban List", short: "Ban", render: renderBanList },
-  { title: "Image", short: "Image", render: renderImage },
-  { title: "NPC Bank", short: "NPC", render: renderNpc },
-  { title: "Memory", short: "Mem", render: renderMemory },
-  { title: "Dev", short: "Dev", render: renderDev }
+  { title: "Core Engine", sub: "Choose the core ruleset that drives NPC behavior and world logic.", short: "Engine", icon: "server", color: "#f59e0b", render: renderEngines },
+  { title: "Persona & Toggles", sub: "Set the narrator voice and fine-tune engine behavior.", short: "Persona", icon: "masks", color: "#ec4899", render: renderPersona },
+  { title: "Writing Style", sub: "Apply a prebuilt style, generate one with AI, or build your own.", short: "Style", icon: "pen", color: "#a855f7", render: renderStyle },
+  { title: "Global Settings", sub: "Set response length, output language, pronouns, and utility behavior.", short: "Global", icon: "globe", color: "#3b82f6", render: renderGlobalSettings },
+  { title: "Add-ons & Blocks", sub: "Attach extra gameplay modules and response panels.", short: "Blocks", icon: "puzzle", color: "#10b981", render: renderBlocks },
+  { title: "Chain of Thought", sub: "Configure the reasoning framework and thinking depth.", short: "Thinking", icon: "brain", color: "#8b5cf6", render: renderThinking },
+  { title: "Story Planner", sub: "Brainstorm and track plot milestones automatically.", short: "Story", icon: "map", color: "#f59e0b", render: renderStory },
+  { title: "Dynamic Ban List", sub: "Detect and ban repetitive AI phrasing.", short: "Ban", icon: "ban", color: "#ef4444", render: renderBanList },
+  { title: "Image Generation", sub: "Use Lumiverse image connections for scene rendering.", short: "Image", icon: "image", color: "#06b6d4", render: renderImage },
+  { title: "NPCs Bank", sub: "Extract, store, recall, and portrait significant NPCs.", short: "NPCs", icon: "address", color: "#22c55e", render: renderNpc },
+  { title: "Memory Core", sub: "Advanced 3-tier context and history management.", short: "Memory", icon: "memory", color: "#38bdf8", render: renderMemory }
 ];
+
+const devTab = { title: "Dev Engine Builder", sub: "Clone, edit, and save custom Megumin engine blocks.", short: "Dev", icon: "code", color: "#a855f7", render: renderDev };
 
 export function setup(ctx: SpindleFrontendContext) {
   ctxRef = ctx as Ctx;
@@ -68,7 +79,7 @@ export function setup(ctx: SpindleFrontendContext) {
     chromeless: true
   });
   floatWidget.root.className = "meg-float";
-  floatWidget.root.innerHTML = `<button class="meg-float-btn" title="Megumin Suite" type="button">M</button>`;
+  floatWidget.root.innerHTML = `<button class="meg-float-btn" title="Megumin Suite" type="button" aria-label="Megumin Suite">${icon("wand")}</button>`;
   floatWidget.root.querySelector("button")?.addEventListener("click", () => openApp());
 
   const unsubscribeBackend = ctxRef.onBackendMessage((payload: unknown) => {
@@ -117,6 +128,7 @@ async function bootstrap() {
   state.engines = data.engines || [];
   state.customEngines = data.customEngines || [];
   state.imageConnections = data.imageConnections || [];
+  state.uiAssets = data.uiAssets || { heroImages: [] };
   state.ready = true;
   state.status = "Ready";
   render();
@@ -139,41 +151,57 @@ function root(): HTMLElement {
 
 function render() {
   if (!appMount || !state.visible) return;
-  const current = tabs[state.activeTab] || tabs[0];
+  const current = state.devMode ? devTab : tabs[state.activeTab] || tabs[0];
+  const heroImage = state.uiAssets.heroImages[(state.activeTab + (state.context?.chatId || "").length) % Math.max(1, state.uiAssets.heroImages.length)] || "";
   root().innerHTML = `
-    <div class="meg-shell">
-      <aside class="meg-dock">
-        ${tabs.map((tab, index) => `<button type="button" class="meg-dock-btn ${index === state.activeTab ? "active" : ""}" data-tab="${index}" title="${tab.title}"><span>${escapeHtml(tab.short)}</span></button>`).join("")}
-      </aside>
-      <main class="meg-window">
-        <section class="meg-hero">
-          <div>
-            <div class="meg-status">${escapeHtml(scopeLabel())}</div>
-            <h1>Megumin Suite</h1>
-            <p>${escapeHtml(current.title)} controls for ${escapeHtml(state.context?.characterName || "the active chat")}.</p>
-          </div>
-          <div class="meg-actions">
-            <span class="meg-save ${state.saving ? "saving" : ""}">${escapeHtml(state.status)}</span>
-            <button type="button" class="meg-btn subtle" data-action="refresh">Refresh</button>
-            <button type="button" class="meg-btn subtle danger" data-action="reset">Reset</button>
-            <button type="button" class="meg-btn primary" data-action="close">Close</button>
-          </div>
-        </section>
-        <section class="meg-content">
-          ${current.render()}
-        </section>
-      </main>
+    <div class="meg-overlay">
+      <div class="ps-modern-modal app-container">
+        <nav class="dock" id="ps_dynamic_dots" aria-label="Megumin Suite sections">
+          ${tabs.map((tab, index) => dockButton(tab, index)).join("")}
+        </nav>
+        <div class="main-wrapper">
+          <section class="hero-banner" ${heroImage ? `style="background-image:url('${escapeHtml(heroImage)}')"` : ""}>
+            <div class="hero-overlay"></div>
+            <div class="top-app-bar">
+              <div class="app-actions">
+                <div class="live-token-count" title="Estimated Payload Tokens">${icon("microchip")} ~${estimatePayloadTokens()}</div>
+                <button type="button" class="ps-modern-btn secondary gold" data-action="sync-tab">${icon("globe")} Sync Tab Globally</button>
+                <button type="button" class="ps-modern-btn secondary danger" data-action="reset">${icon("reset")} Reset</button>
+                <button type="button" class="ps-modern-btn secondary purple ${state.devMode ? "active" : ""}" data-action="open-dev">${icon("code")} Dev</button>
+                <span class="ps-save-indicator ${state.saving ? "saving" : ""}">${escapeHtml(state.status)}</span>
+                <button type="button" class="ps-modern-btn primary" data-action="close">${icon("save")} Save & Close</button>
+              </div>
+            </div>
+            <div class="hero-content">
+              <div class="status" id="ps_rule_status_main">${escapeHtml(scopeLabel())}</div>
+              <h2 class="name" id="ps_char_rule_label">Megumin Suite</h2>
+              <p>${escapeHtml(current.sub)} ${escapeHtml(state.context?.characterName ? `for ${state.context.characterName}.` : "")}</p>
+            </div>
+          </section>
+          <section class="main-content" id="ps_stage_content">
+            ${current.render()}
+          </section>
+        </div>
+      </div>
     </div>`;
   wire(root());
 }
 
+function dockButton(tab: typeof tabs[number], index: number): string {
+  const active = !state.devMode && index === state.activeTab;
+  return `<button type="button" class="dock-icon ${active ? "active" : ""}" data-tab="${index}" title="${escapeHtml(tab.title)}">
+    ${icon(tab.icon)}<span>${escapeHtml(tab.title)}</span>
+  </button>`;
+}
+
 function scopeLabel(): string {
-  return state.context?.chatId ? `Chat Profile: ${state.context.chatId}` : "Global Profile";
+  return state.context?.chatId ? `Chat Profile: ${state.context.chatId}` : "Global Default";
 }
 
 function wire(container: HTMLElement) {
   container.querySelectorAll<HTMLElement>("[data-tab]").forEach((button) => {
     button.addEventListener("click", () => {
+      state.devMode = false;
       state.activeTab = Number(button.dataset.tab || 0);
       render();
     });
@@ -228,6 +256,11 @@ async function handleAction(el: HTMLElement) {
   const action = el.dataset.action;
   try {
     if (action === "close") return closeApp();
+    if (action === "open-dev") {
+      state.devMode = !state.devMode;
+      render();
+      return;
+    }
     if (action === "refresh") {
       state.status = "Refreshing...";
       render();
@@ -239,7 +272,52 @@ async function handleAction(el: HTMLElement) {
       const data = await request<any>("profile:reset");
       state.profile = mergeProfile(data.profile);
       state.status = "Reset";
+      state.devMode = false;
       render();
+      return;
+    }
+    if (action === "sync-tab") {
+      const data = await request<any>("profile:syncTab", { keys: activeTabProfileKeys() });
+      state.profile = mergeProfile(data.profile);
+      state.status = "Synced";
+      render();
+      return;
+    }
+    if (action === "engine-filter") {
+      state.engineFilter = el.dataset.value || "all";
+      render();
+      return;
+    }
+    if (action === "style-filter") {
+      state.styleFilter = el.dataset.value || "direct";
+      render();
+      return;
+    }
+    if (action === "style-off") {
+      state.profile.activeStyleId = null;
+      state.profile.aiRule = "";
+      saveProfileSoon();
+      render();
+      return;
+    }
+    if (action === "style-direct") {
+      const style = (state.logic?.directStyles || []).find((item: any) => item.id === el.dataset.value);
+      if (style) {
+        state.profile.activeStyleId = style.id;
+        state.profile.aiRule = style.rule || "";
+        saveProfileSoon();
+        render();
+      }
+      return;
+    }
+    if (action === "style-template") {
+      const template = (state.logic?.styleTemplates || [])[Number(el.dataset.index || 0)];
+      if (template) {
+        state.profile.aiRule = template.notes || "";
+        state.profile.activeStyleId = null;
+        saveProfileSoon();
+        render();
+      }
       return;
     }
     if (action === "toggle") {
@@ -251,6 +329,18 @@ async function handleAction(el: HTMLElement) {
     }
     if (action === "select") {
       setPath(state.profile as any, el.dataset.path!, el.dataset.value);
+      saveProfileSoon();
+      render();
+      return;
+    }
+    if (action === "select-engine") {
+      const engineId = el.dataset.value || "";
+      state.profile.mode = engineId;
+      const style = preferredStyleForEngine(engineId);
+      if (style) {
+        state.profile.activeStyleId = style.id;
+        state.profile.aiRule = style.rule || state.profile.aiRule;
+      }
       saveProfileSoon();
       render();
       return;
@@ -279,9 +369,16 @@ async function handleAction(el: HTMLElement) {
       const prompt = (root().querySelector("#meg-manual-image-prompt") as HTMLTextAreaElement)?.value || "";
       return runTask("Generating image...", "image:manual", { prompt });
     }
-    if (action === "npc-portrait") return runTask(`Generating portrait...`, "npc:portrait", { name: el.dataset.name });
+    if (action === "npc-portrait") return runTask("Generating portrait...", "npc:portrait", { name: el.dataset.name });
     if (action === "ban-remove") {
       state.profile.banList = state.profile.banList.filter((item) => item !== el.dataset.value);
+      saveProfileSoon();
+      render();
+      return;
+    }
+    if (action === "ban-clear") {
+      if (!state.profile.banList.length || !confirm("Clear every banned phrase?")) return;
+      state.profile.banList = [];
       saveProfileSoon();
       render();
       return;
@@ -322,10 +419,12 @@ async function saveDevEngine() {
   const id = (root().querySelector("#dev-id") as HTMLInputElement)?.value.trim();
   const label = (root().querySelector("#dev-label") as HTMLInputElement)?.value.trim();
   const p1 = (root().querySelector("#dev-p1") as HTMLTextAreaElement)?.value || "";
+  const p3 = (root().querySelector("#dev-p3") as HTMLTextAreaElement)?.value || "";
   const p4 = (root().querySelector("#dev-p4") as HTMLTextAreaElement)?.value || "";
+  const p5 = (root().querySelector("#dev-p5") as HTMLTextAreaElement)?.value || "";
   const p6 = (root().querySelector("#dev-p6") as HTMLTextAreaElement)?.value || "";
   if (!id || !label) throw new Error("Engine id and label are required");
-  const data = await request<any>("engine:save", { engine: { id, label, color: "#a855f7", p1, p4, p6 } });
+  const data = await request<any>("engine:save", { engine: { id, label, color: "#a855f7", p1, p3, p4, p5, p6 } });
   state.engines = data.engines;
   state.customEngines = data.customEngines;
   state.status = "Engine saved";
@@ -342,202 +441,530 @@ async function deleteDevEngine(id: string) {
 }
 
 function renderEngines(): string {
+  const descriptions: Record<string, string> = {
+    balance: "The original Secret Sauce. NPCs react naturally - no simping, no needless hostility.",
+    "balance Test": "Newer balance mode with lower token weight and more creativity.",
+    cinematic: "Hollywood-inspired storytelling with dramatic beats and heightened tension.",
+    dark: "Balance, but harsher. The world is unforgiving and consequences hit harder.",
+    "v6-anime-director": "Advanced cinematic framing and pacing for high-budget anime direction.",
+    "v6-dream-team": "A six-specialist writer room for narrative consistency and realism.",
+    "v6-dream-team-lite": "A streamlined Dream Team variant with lower token overhead.",
+    "v7-core": "Grounded, cinematic, patient, and built for relentless world progression.",
+    "v7-reality": "Unrelenting simulation with no narrative protection.",
+    "v7-gentle": "A softer, quieter engine with more atmospheric pacing."
+  };
+  const active = state.engines.find((engine) => engine.id === state.profile.mode);
+  const visible = state.engines.filter((engine) => engineMatchesFilter(engine, state.engineFilter));
+
   return `
-    <div class="meg-grid">
-      ${state.engines.map((engine) => card({
-        title: engine.label || engine.id,
-        sub: engine.id,
-        active: state.profile.mode === engine.id,
-        color: engine.color || "#10b981",
-        action: "select",
-        path: "mode",
-        value: engine.id
-      })).join("")}
+    ${tabHeader("Core Engines", "Choose the narrative engine that drives your AI's behavior.", "microchip", "#f59e0b", active?.label || state.profile.mode, "#10b981")}
+    <div class="wstyle-filters">
+      ${["all", "V4", "V5", "V6", "V7", "Custom"].map((filter) => filterPill(filter, state.engineFilter === filter, engineCount(filter))).join("")}
     </div>
-    <div class="meg-panel">
-      <h2>Engine Toggles</h2>
-      ${toggleRow("OOC Protocol", "v7_ooc", "Keep the V7 out-of-character directive active.")}
-      ${toggleRow("PC Solo Physicality", "v7_pcsolo", "Allow observable body language when the user character is alone.")}
-      ${toggleRow("Cultural Anchoring", "v7_culture", "Use era-specific culture and real-world specificity in suitable scenes.")}
-      ${toggleRow("Scene Choreography", "v7_scene", "Keep crowd management and camera-focus rules active.")}
-      ${toggleRow("Intro Protocol", "v7_intro", "Preserve V7 opening-scene behavior.")}
+    <div class="mtab-card-grid">
+      ${visible.map((engine) => engineCard(engine, descriptions[engine.id] || `${engine.label || engine.id} engine flow.`)).join("")}
+    </div>
+    ${state.engineFilter === "V6" && !visible.length ? lockedState("hammer", "V6 Engines are in the forge.", "Stay tuned for the next update.") : ""}
+    ${state.customEngines.length ? `<div class="wstyle-section-head green">${icon("code")} Custom Engines</div><div class="mtab-card-grid">${state.customEngines.map((engine) => engineCard(engine, "Custom user logic flow.")).join("")}</div>` : ""}
+    <div class="wstyle-section-head blue">${icon("layers")} V7 Modules</div>
+    <div class="mtab-card-list">
+      ${toggleGeneric("OOC Protocol", "toggles.v7_ooc", state.profile.toggles.v7_ooc, "Keep the V7 out-of-character directive active.")}
+      ${toggleGeneric("PC Solo Physicality", "toggles.v7_pcsolo", state.profile.toggles.v7_pcsolo, "Allow observable body language when the user character is alone.")}
+      ${toggleGeneric("Cultural Anchoring", "toggles.v7_culture", state.profile.toggles.v7_culture, "Use era-specific culture and real-world specificity in suitable scenes.")}
+      ${toggleGeneric("Scene Choreography", "toggles.v7_scene", state.profile.toggles.v7_scene, "Keep crowd management and camera-focus rules active.")}
+      ${toggleGeneric("Introduction Protocol", "toggles.v7_intro", state.profile.toggles.v7_intro, "Preserve V7 opening-scene behavior.")}
+    </div>`;
+}
+
+function renderPersona(): string {
+  const personalities = state.logic?.personalities || [];
+  const locked = state.profile.mode.startsWith("v7") || state.profile.mode.includes("v6-dream-team");
+  return `
+    ${tabHeader("Persona & Toggles", "Set narrator voice and extra behavioral switches.", "masks", "#ec4899", locked ? "Locked" : state.profile.personality, "#ec4899")}
+    ${locked ? lockedState("lock", "Persona Selection Locked", "This engine uses its own narrative framework. Standard persona overlays are disabled to avoid logic conflicts.") : `
+      <div class="wstyle-section-head purple">${icon("masks")} Select Persona</div>
+      <div class="mtab-card-grid">
+        ${personalities.map((item: any) => infoCard({
+          title: item.label,
+          sub: personaDesc(item.id, item.content),
+          active: state.profile.personality === item.id,
+          action: "select",
+          path: "personality",
+          value: item.id,
+          badge: item.recommended ? "Recommended" : ""
+        })).join("")}
+      </div>`}
+    <div class="wstyle-section-head gold">${icon("sliders")} Extra Toggles</div>
+    <div class="mtab-card-list">
+      ${(Object.entries(state.logic?.toggles || {}) as Array<[string, any]>).map(([key, toggle]) => toggleGeneric(toggle.label, `toggles.${key}`, !!state.profile.toggles[key], toggle.recommendedOff ? "Off by default - most engines handle this natively." : strip(toggle.content).slice(0, 140))).join("")}
     </div>`;
 }
 
 function renderStyle(): string {
-  const personalities = state.logic?.personalities || [];
+  const directStyles = state.logic?.directStyles || [];
+  const templates = state.logic?.styleTemplates || [];
+  const activeName = state.profile.activeStyleId
+    ? directStyles.find((item: any) => item.id === state.profile.activeStyleId)?.name || "Custom"
+    : state.profile.aiRule ? "Custom Rule" : "Off";
   return `
-    <div class="meg-panel">
-      <h2>Personality Core</h2>
-      <div class="meg-grid compact">
-        ${personalities.map((item: any) => card({ title: item.label, sub: item.content, active: state.profile.personality === item.id, action: "select", path: "personality", value: item.id })).join("")}
-      </div>
+    ${tabHeader("Writing Style", "Apply direct styles, generate from templates, or write your own rule.", "pen", "#a855f7", activeName, "#a855f7")}
+    <div class="wstyle-filters">
+      ${stylePill("direct", "Direct Styles", directStyles.length)}
+      ${stylePill("templates", "Style Templates", templates.length)}
+      ${stylePill("editor", "Rule Editor", state.profile.aiRule ? 1 : 0)}
     </div>
-    <div class="meg-panel">
-      <h2>Writing Rule</h2>
-      <textarea class="meg-textarea tall" data-bind="aiRule" placeholder="Custom style or authoring rule...">${escapeHtml(state.profile.aiRule)}</textarea>
-    </div>
-    <div class="meg-panel two">
-      ${inputField("Language", "userLanguage", state.profile.userLanguage, "English")}
-      ${inputField("Word Count", "userWordCount", state.profile.userWordCount, "600")}
-      ${selectField("Pronouns", "userPronouns", state.profile.userPronouns, [
-        ["off", "Off"],
-        ["male", "Male"],
-        ["female", "Female"]
-      ])}
-      ${selectField("Thinking Effort", "thinkEffort", state.profile.thinkEffort, [
-        ["unspecified", "Unspecified"],
-        ["50", "50 words"],
-        ["100", "100 words"],
-        ["200", "200 words"],
-        ["custom", "Custom"]
-      ])}
+    ${state.styleFilter === "direct" ? `
+      <div class="mtab-card-grid">
+        ${infoCard({ title: "Off", sub: "No additional style overlay.", active: !state.profile.activeStyleId && !state.profile.aiRule, action: "style-off", value: "off", badge: "Clean" })}
+        ${directStyles.map((style: any) => infoCard({ title: style.name, sub: style.desc || strip(style.rule).slice(0, 160), active: state.profile.activeStyleId === style.id, action: "style-direct", value: style.id, badge: state.profile.activeStyleId === style.id ? "Active" : "" })).join("")}
+      </div>` : ""}
+    ${state.styleFilter === "templates" ? `
+      <div class="mtab-card-grid">
+        ${templates.map((template: any, index: number) => infoCard({ title: template.name, sub: `${(template.tags || []).slice(0, 5).join(", ")} - ${template.notes || ""}`.slice(0, 220), active: false, action: "style-template", index, badge: "Generate Rule" })).join("")}
+      </div>` : ""}
+    ${state.styleFilter === "editor" ? `
+      <div class="mtab-panel">
+        <div class="mtab-panel-title purple">${icon("pen")} Custom Writing Rule</div>
+        <textarea class="ps-modern-input textarea-xl" data-bind="aiRule" placeholder="Custom style or authoring rule...">${escapeHtml(state.profile.aiRule)}</textarea>
+      </div>` : ""}
+    <div class="wstyle-dnr-panel">
+      <div class="mtab-panel-title gold">${icon("sliders")} Dialogue / Narration Ratio</div>
+      ${toggleGeneric("Enable Ratio Control", "dnRatio.enabled", state.profile.dnRatio.enabled, "Guide the balance between spoken dialogue and narration.")}
+      ${rangeField("Dialogue Percentage", "dnRatio.dialogue", state.profile.dnRatio.dialogue, 0, 100)}
     </div>`;
 }
 
-function renderAddons(): string {
+function renderGlobalSettings(): string {
+  return `
+    ${tabHeader("Global Settings", "Language, response length, pronouns, utility behavior, and sound styling.", "globe", "#3b82f6", "Profile", "#3b82f6")}
+    <div class="mtab-panel">
+      <div class="mtab-panel-title blue">${icon("globe")} Output Preferences</div>
+      <div class="mtab-setting-row">${settingText("Target Word Count", "Leave empty for no limit")}${inputField("", "userWordCount", state.profile.userWordCount, "e.g. 600", "number")}</div>
+      <div class="mtab-setting-row">${settingText("Language Output", "Leave empty for the chat default")}${inputField("", "userLanguage", state.profile.userLanguage, "English")}</div>
+      <div class="mtab-setting-row">${settingText("User Gender", "Pronoun hint for the assistant")}${selectField("", "userPronouns", state.profile.userPronouns, [["off", "Off"], ["male", "Male (He/Him)"], ["female", "Female (She/Her)"]])}</div>
+    </div>
+    <div class="mtab-panel">
+      <div class="mtab-panel-title gold">${icon("settings")} Utility Controls</div>
+      ${toggleGeneric("Prompt Payload Preview", "toggles.promptPreview", !!state.profile.toggles.promptPreview, "Show the constructed prompt before it is sent.")}
+      ${toggleGeneric("Disable Utility Prefills", "disableUtilityPrefill", state.profile.disableUtilityPrefill, "Use this if a provider rejects assistant prefills during utility generations.")}
+      ${toggleGeneric("Cinematic Sounds", "onomatopoeia.enabled", state.profile.onomatopoeia.enabled, "Use precise sound words where physically appropriate.")}
+      ${toggleGeneric("Animate Sounds", "onomatopoeia.useStyling", state.profile.onomatopoeia.useStyling, "Wrap sound words for capable renderers.")}
+    </div>`;
+}
+
+function renderBlocks(): string {
   const addons = state.logic?.addons || [];
+  const blocks = state.logic?.blocks || [];
   return `
-    <div class="meg-panel">
-      <h2>Add-ons</h2>
-      <div class="meg-grid">
-        ${addons.map((item: any) => multiCard(item.label, item.content, state.profile.addons.includes(item.id), "addons", item.id)).join("")}
-      </div>
+    ${tabHeader("Add-ons & Blocks", "Gameplay modules and response panels injected into Megumin prompts.", "puzzle", "#10b981", `${state.profile.addons.length + state.profile.blocks.length} Active`, "#10b981")}
+    <div class="wstyle-section-head blue">${icon("puzzle")} Gameplay Add-ons</div>
+    <div class="mtab-card-grid">
+      ${addons.map((item: any) => moduleCard(item, state.profile.addons.includes(item.id), "addons")).join("")}
+    </div>
+    <div class="wstyle-section-head green">${icon("cubes")} Response Blocks</div>
+    <div class="mtab-card-grid">
+      ${blocks.map((item: any) => moduleCard(item, state.profile.blocks.includes(item.id), "blocks")).join("")}
     </div>`;
 }
 
-function renderOutput(): string {
-  const blocks = state.logic?.blocks || [];
+function renderThinking(): string {
   const models = state.logic?.models || [];
+  const grouped = groupModels(models);
   return `
-    <div class="meg-panel">
-      <h2>Output Blocks</h2>
-      <div class="meg-grid compact">
-        ${blocks.map((item: any) => multiCard(item.label, item.content, state.profile.blocks.includes(item.id), "blocks", item.id)).join("")}
+    ${tabHeader("Chain of Thought", "Configure the AI's thinking framework and reasoning depth.", "brain", "#8b5cf6", state.profile.model, "#8b5cf6")}
+    <div class="mtab-panel">
+      <div class="mtab-panel-title purple">${icon("brain")} Reasoning Control</div>
+      <div class="mtab-card-grid compact">
+        ${["unspecified", "50", "100", "200", "custom"].map((effort) => infoCard({
+          title: effort === "unspecified" ? "Default" : effort === "custom" ? "Custom" : `${effort} Words`,
+          sub: effort === "unspecified" ? "Use the selected model preset." : "Add a target thinking budget.",
+          active: state.profile.thinkEffort === effort,
+          action: "select",
+          path: "thinkEffort",
+          value: effort
+        })).join("")}
       </div>
+      ${state.profile.thinkEffort === "custom" ? inputField("Custom Think Effort", "customThinkEffort", state.profile.customThinkEffort, "100") : ""}
+      ${toggleGeneric("Gemini Thinking", "thinkingV2", state.profile.thinkingV2, "Inject the triple think opener used by the original Suite.")}
     </div>
-    <div class="meg-panel">
-      <h2>Chain of Thought</h2>
-      <div class="meg-grid compact">
-        ${models.map((item: any) => card({ title: item.label || item.id, sub: item.id, active: state.profile.model === item.id, action: "select", path: "model", value: item.id })).join("")}
-      </div>
-      ${toggleRow("Gemini Thinking", "thinkingV2", "Inject the triple think opener used by the original Suite.")}
-      ${toggleGeneric("Dialogue/Narration Ratio", "dnRatio.enabled", state.profile.dnRatio.enabled, "Control the dialogue-to-narration balance.")}
-      ${rangeField("Dialogue %", "dnRatio.dialogue", state.profile.dnRatio.dialogue, 0, 100)}
-      ${toggleGeneric("Onomatopoeia", "onomatopoeia.enabled", state.profile.onomatopoeia.enabled, "Require sound words where physically appropriate.")}
-    </div>`;
+    ${Object.entries(grouped).map(([group, items]) => `
+      <div class="wstyle-section-head purple">${icon("spark")} ${escapeHtml(group)}</div>
+      <div class="mtab-card-grid compact">
+        ${(items as any[]).map((item) => infoCard({ title: item.label || readableModel(item.id), sub: item.id, active: state.profile.model === item.id, action: "select", path: "model", value: item.id })).join("")}
+      </div>`).join("")}`;
 }
 
 function renderStory(): string {
+  const sp = state.profile.storyPlan;
   return `
-    <div class="meg-panel">
-      <h2>Story Planner</h2>
-      ${toggleGeneric("Enabled", "storyPlan.enabled", state.profile.storyPlan.enabled, "Inject the current plan and tracker into Megumin prompts.")}
-      ${selectField("Trigger", "storyPlan.triggerMode", state.profile.storyPlan.triggerMode, [["manual", "Manual"], ["frequency", "Frequency"]])}
-      ${inputField("Auto Frequency", "storyPlan.autoFreq", String(state.profile.storyPlan.autoFreq), "10", "number")}
-      <button class="meg-btn primary" type="button" data-action="story-generate">Generate Plan Now</button>
-      <textarea class="meg-textarea xl" data-bind="storyPlan.currentPlan">${escapeHtml(state.profile.storyPlan.currentPlan)}</textarea>
+    ${tabHeader("Story Planner", "Brainstorm and track plot milestones automatically.", "map", "#f59e0b", sp.enabled ? "Enabled" : "Disabled", sp.enabled ? "#10b981" : "#a1a1aa")}
+    ${toggleGeneric("Enable Story Planner", "storyPlan.enabled", sp.enabled, "Inject the current plan and tracker into Megumin prompts.")}
+    <div class="mtab-panel">
+      <div class="mtab-panel-title gold">${icon("settings")} Engine Settings</div>
+      <div class="mtab-setting-row">${settingText("Generation Backend", "Utility generations run through Lumiverse quiet generation.")}${selectField("", "storyPlan.backend", sp.backend, [["direct", "Direct API Call"]])}</div>
+      <div class="mtab-setting-row">${settingText("Auto-Trigger Mode", "Generate new plans automatically.")}${selectField("", "storyPlan.triggerMode", sp.triggerMode, [["manual", "Manual Only"], ["frequency", "Every X Replies"]])}</div>
+      ${sp.triggerMode === "frequency" ? `<div class="mtab-setting-row">${settingText("Every X Replies", "Reply cadence for background planning.")}${inputField("", "storyPlan.autoFreq", String(sp.autoFreq), "10", "number")}</div>` : ""}
+    </div>
+    <div class="mtab-panel">
+      <div class="panel-heading-row">
+        <div class="mtab-panel-title gold">${icon("book")} Current Story Plan</div>
+        <button class="wstyle-gen-btn" type="button" data-action="story-generate">${icon("bolt")} Generate Plan Now</button>
+      </div>
+      <textarea class="ps-modern-input textarea-xl" data-bind="storyPlan.currentPlan" placeholder="Generated plot milestones will appear here.">${escapeHtml(sp.currentPlan)}</textarea>
+      <div class="mtab-callout gold">${icon("info")} <span>A tracker is injected at the end of each response when the planner is enabled.</span></div>
     </div>`;
 }
 
 function renderBanList(): string {
   return `
-    <div class="meg-panel">
-      <h2>Dynamic Ban List</h2>
-      <button class="meg-btn primary" type="button" data-action="ban-analyze">Analyze Chat</button>
-      <div class="meg-tags">
-        ${state.profile.banList.length ? state.profile.banList.map((item) => `<button type="button" class="meg-tag" data-action="ban-remove" data-value="${escapeHtml(item)}">${escapeHtml(item)} x</button>`).join("") : `<span class="meg-muted">No phrases banned yet.</span>`}
+    ${tabHeader("Dynamic Ban List", "Detect and ban overused phrases from AI responses.", "ban", "#ef4444", `${state.profile.banList.length} Banned`, "#ef4444")}
+    <div class="mtab-panel">
+      <div class="panel-heading-row">
+        <div class="mtab-panel-title purple">${icon("radar")} AI Slop Detector</div>
+        <button class="wstyle-gen-btn purple-bg" type="button" data-action="ban-analyze">${icon("radar")} Analyze Chat</button>
       </div>
-      <textarea class="meg-textarea" placeholder="Add one phrase per line" id="ban-manual"></textarea>
-      <button class="meg-btn subtle" type="button" data-action="ban-add">Add Phrases</button>
-    </div>`;
+      <div class="mtab-setting-row">${settingText("Generator Backend", "Choose how to generate the analysis.")}${selectField("", "banListBackend", state.profile.banListBackend, [["direct", "Direct API Call"]])}</div>
+    </div>
+    <div class="mtab-panel">
+      <div class="mtab-panel-title red">${icon("plus")} Add Phrase</div>
+      <div class="inline-form">
+        <textarea class="ps-modern-input" placeholder="Add one phrase per line..." id="ban-manual"></textarea>
+        <button class="ps-modern-btn secondary" type="button" data-action="ban-add">${icon("plus")} Add</button>
+      </div>
+    </div>
+    <div class="panel-heading-row">
+      <div class="wstyle-section-head red">${icon("list")} Active Banned Phrases</div>
+      <button class="ps-modern-btn secondary danger mini" type="button" data-action="ban-clear">${icon("trash")} Clear All</button>
+    </div>
+    <div class="mtab-card-list dashed">
+      ${state.profile.banList.length ? state.profile.banList.map((item) => `<button type="button" class="mtab-ban-item" data-action="ban-remove" data-value="${escapeHtml(item)}"><span>${escapeHtml(item)}</span>${icon("x")}</button>`).join("") : `<span class="empty-text">No phrases banned yet.</span>`}
+    </div>
+    <div class="mtab-callout purple">${icon("info")} <span>Ban entries become strict negative style rules during prompt assembly.</span></div>`;
 }
 
 function renderImage(): string {
+  const ig = state.profile.imageGen;
+  const previewImage = state.uiAssets.mascotImage || state.uiAssets.heroImages[0] || "";
   return `
-    <div class="meg-panel">
-      <h2>Image Generation</h2>
-      ${toggleGeneric("Enabled", "imageGen.enabled", state.profile.imageGen.enabled, "Allow Megumin to generate scene images.")}
-      ${selectField("Trigger", "imageGen.triggerMode", state.profile.imageGen.triggerMode, [["manual", "Manual"], ["always", "Always"], ["frequency", "Frequency"], ["conditional", "Conditional"]])}
-      ${selectField("Connection", "imageGen.connectionId", state.profile.imageGen.connectionId, [["", "Default"], ...state.imageConnections.map((c): [string, string] => [String(c.id), `${c.name} (${c.provider})`])])}
-      ${selectField("Style", "imageGen.promptStyle", state.profile.imageGen.promptStyle, [["standard", "Standard"], ["illustrious", "Illustrious tags"], ["sdxl", "SDXL prose"]])}
-      ${selectField("Perspective", "imageGen.promptPerspective", state.profile.imageGen.promptPerspective, [["scene", "Scene"], ["pov", "POV"], ["character", "Character"]])}
-      <div class="meg-row-wrap">${RESOLUTIONS.map((res) => `<button type="button" class="meg-chip" data-action="select-resolution" data-w="${res.w}" data-h="${res.h}">${escapeHtml(res.label)}</button>`).join("")}</div>
-      ${inputField("Width", "imageGen.imgWidth", String(state.profile.imageGen.imgWidth), "1024", "number")}
-      ${inputField("Height", "imageGen.imgHeight", String(state.profile.imageGen.imgHeight), "1024", "number")}
-      ${inputField("Steps", "imageGen.steps", String(state.profile.imageGen.steps), "20", "number")}
-      ${inputField("CFG", "imageGen.cfg", String(state.profile.imageGen.cfg), "7", "number")}
-      ${inputField("Sampler", "imageGen.selectedSampler", state.profile.imageGen.selectedSampler, "euler")}
-      <textarea class="meg-textarea" data-bind="imageGen.customNegative">${escapeHtml(state.profile.imageGen.customNegative)}</textarea>
-      <textarea id="meg-manual-image-prompt" class="meg-textarea" placeholder="Optional manual image prompt..."></textarea>
-      <button class="meg-btn primary" type="button" data-action="image-manual">Generate Image</button>
-    </div>`;
+    ${tabHeader("Image Generation", "Use Lumiverse image connections for automatic scene rendering.", "image", "#06b6d4", ig.enabled ? "Enabled" : "Disabled", ig.enabled ? "#10b981" : "#a1a1aa")}
+    ${toggleGeneric("Enable Image Generation", "imageGen.enabled", ig.enabled, "Allow Megumin to generate scene images.")}
+    <div class="image-lab">
+      <div class="mtab-panel">
+        <div class="mtab-panel-title blue">${icon("link")} Connection & Backend</div>
+        <div class="mtab-setting-row">${settingText("Connection", "Uses the selected Lumiverse image-gen connection.")}${selectField("", "imageGen.connectionId", ig.connectionId, [["", "Default"], ...state.imageConnections.map((c): [string, string] => [String(c.id), `${c.name} (${c.provider})`])])}</div>
+        <div class="mtab-setting-row">${settingText("Prompt Generator", "Direct quiet generation is used for prompt creation.")}${selectField("", "imageGen.generatorBackend", ig.generatorBackend, [["direct", "Direct API Call"]])}</div>
+        <div class="mtab-setting-row">${settingText("Trigger Mode", "Choose when Megumin asks for an image.")}${selectField("", "imageGen.triggerMode", ig.triggerMode, [["always", "Every Reply"], ["frequency", "After X Replies"], ["conditional", "Only when a character sends a picture"], ["manual", "Manual Button Only"]])}</div>
+        ${ig.triggerMode === "frequency" ? `<div class="mtab-setting-row">${settingText("Every X Replies", "Reply cadence for automatic images.")}${inputField("", "imageGen.autoGenFreq", String(ig.autoGenFreq), "1", "number")}</div>` : ""}
+        ${toggleGeneric("Preview Prompt Before Sending", "imageGen.previewPrompt", ig.previewPrompt, "Preview or edit prompts before rendering.")}
+      </div>
+      <div class="visual-preview" ${previewImage ? `style="background-image:url('${escapeHtml(previewImage)}')"` : ""}>
+        <div>${icon("spark")} Kazuma Image Lab</div>
+      </div>
+    </div>
+    <div class="mtab-panel">
+      <div class="mtab-panel-title gold">${icon("pen")} Prompt Formatting</div>
+      <div class="setting-grid">
+        ${selectField("Model Style Format", "imageGen.promptStyle", ig.promptStyle, [["standard", "Standard"], ["illustrious", "Illustrious / Pony Tags"], ["sdxl", "SDXL Natural Prose"]])}
+        ${selectField("Camera Perspective", "imageGen.promptPerspective", ig.promptPerspective, [["scene", "Cinematic Scene"], ["pov", "First Person POV"], ["character", "Character Portrait"]])}
+      </div>
+      ${inputField("Extra Instructions", "imageGen.promptExtra", ig.promptExtra, "moody lighting, dark atmosphere...")}
+    </div>
+    <div class="mtab-panel">
+      <div class="mtab-panel-title gold">${icon("sliders")} Image Parameters</div>
+      <div class="resolution-grid">${RESOLUTIONS.map((res) => `<button type="button" class="res-pill ${ig.imgWidth === res.w && ig.imgHeight === res.h ? "active" : ""}" data-action="select-resolution" data-w="${res.w}" data-h="${res.h}">${escapeHtml(res.label)}</button>`).join("")}</div>
+      <div class="setting-grid">
+        ${inputField("Width", "imageGen.imgWidth", String(ig.imgWidth), "1024", "number")}
+        ${inputField("Height", "imageGen.imgHeight", String(ig.imgHeight), "1024", "number")}
+        ${inputField("Steps", "imageGen.steps", String(ig.steps), "20", "number")}
+        ${inputField("CFG Scale", "imageGen.cfg", String(ig.cfg), "7", "number")}
+        ${inputField("Seed", "imageGen.customSeed", String(ig.customSeed), "-1", "number")}
+        ${inputField("Sampler", "imageGen.selectedSampler", ig.selectedSampler, "euler")}
+        ${inputField("Scheduler", "imageGen.scheduler", ig.scheduler, "normal")}
+        ${inputField("Checkpoint", "imageGen.selectedModel", ig.selectedModel, "model.safetensors")}
+      </div>
+      <textarea class="ps-modern-input" data-bind="imageGen.customNegative" placeholder="Negative prompt...">${escapeHtml(ig.customNegative)}</textarea>
+    </div>
+    <div class="mtab-panel">
+      <div class="panel-heading-row">
+        <div class="mtab-panel-title blue">${icon("bolt")} Manual Render</div>
+        <button class="wstyle-gen-btn blue-bg" type="button" data-action="image-manual">${icon("image")} Generate Image</button>
+      </div>
+      <textarea id="meg-manual-image-prompt" class="ps-modern-input" placeholder="Optional manual image prompt..."></textarea>
+    </div>
+    <details class="mtab-panel">
+      <summary class="mtab-panel-title blue">${icon("code")} ComfyUI Field Placeholders</summary>
+      <div class="placeholder-grid">${KAZUMA_PLACEHOLDERS.map((item) => `<div><code>${escapeHtml(item.key)}</code><span>${escapeHtml(item.desc)}</span></div>`).join("")}</div>
+    </details>`;
 }
 
 function renderNpc(): string {
+  const bank = state.profile.npcBank;
   return `
-    <div class="meg-panel">
-      <h2>NPC Bank</h2>
-      ${toggleGeneric("Enabled", "npcBank.enabled", state.profile.npcBank.enabled, "Capture and inject significant NPC dossiers.")}
-      ${toggleGeneric("Send Portraits To AI", "npcBank.sendPortraitsToAi", state.profile.npcBank.sendPortraitsToAi, "Use generated portraits as multimodal context when relevant.")}
-      <button class="meg-btn primary" type="button" data-action="npc-scan">Scan Last Message</button>
+    ${tabHeader("NPCs Bank", "Automatically extract and track significant NPCs.", "address", "#22c55e", `${bank.npcs.length} NPCs`, "#22c55e")}
+    <div class="mtab-panel">
+      <div class="mtab-panel-title green">${icon("settings")} Bank Settings</div>
+      ${toggleGeneric("Enable NPC Bank", "npcBank.enabled", bank.enabled, "Capture and inject significant NPC dossiers.")}
+      ${toggleGeneric("Send Portraits To AI", "npcBank.sendPortraitsToAi", bank.sendPortraitsToAi, "Use generated portraits as multimodal context when relevant.")}
+      <button class="wstyle-gen-btn green-bg" type="button" data-action="npc-scan">${icon("search")} Scan Last Message</button>
     </div>
-    <div class="meg-list">
-      ${state.profile.npcBank.npcs.length ? state.profile.npcBank.npcs.map(renderNpcCard).join("") : `<div class="meg-panel"><span class="meg-muted">No NPCs saved yet.</span></div>`}
-    </div>`;
+    ${bank.npcs.length ? `<div class="npc-grid">${bank.npcs.map(renderNpcCard).join("")}</div>` : emptyWithMascot("No NPCs saved yet.", "Dossiers appear here after Megumin extracts them from assistant replies.")}`;
 }
 
 function renderNpcCard(npc: any): string {
   return `
-    <article class="meg-panel npc">
-      ${npc.pfpImageUrl ? `<img class="npc-img" src="${escapeHtml(npc.pfpImageUrl)}" alt="">` : `<div class="npc-img placeholder">${escapeHtml(npc.name.slice(0, 1))}</div>`}
-      <div>
-        <h2>${escapeHtml(npc.name)}</h2>
-        <p>${escapeHtml([npc.age, npc.sex, npc.occupation].filter(Boolean).join(" | "))}</p>
+    <article class="npc-card">
+      ${npc.pfpImageUrl ? `<img class="npc-img" src="${escapeHtml(npc.pfpImageUrl)}" alt="">` : `<div class="npc-img placeholder">${escapeHtml(String(npc.name || "?").slice(0, 1))}</div>`}
+      <div class="npc-body">
+        <div class="npc-title-row"><h3>${escapeHtml(npc.name)}</h3><button class="icon-btn danger" type="button" data-action="npc-remove" data-name="${escapeHtml(npc.name)}">${icon("trash")}</button></div>
+        <p class="npc-meta">${escapeHtml([npc.age, npc.sex, npc.occupation].filter(Boolean).join(" | ") || "No metadata")}</p>
         <p>${escapeHtml(npc.appearance || npc.background || "No dossier details yet.")}</p>
-        <button class="meg-btn subtle" type="button" data-action="npc-portrait" data-name="${escapeHtml(npc.name)}">Portrait</button>
-        <button class="meg-btn subtle danger" type="button" data-action="npc-remove" data-name="${escapeHtml(npc.name)}">Remove</button>
+        <div class="npc-actions">
+          <button class="ps-modern-btn secondary mini" type="button" data-action="npc-portrait" data-name="${escapeHtml(npc.name)}">${icon("image")} Portrait</button>
+        </div>
       </div>
     </article>`;
 }
 
 function renderMemory(): string {
   const mem = state.profile.memoryCore;
+  const workingPct = clamp((mem.workingLimit / Math.max(1, mem.workingLimit + mem.shortTermLimit)) * 100, 8, 80);
+  const shortPct = clamp((mem.shortTermChunks.length / Math.max(1, mem.shortTermLimit)) * 100, 5, 100);
+  const longPct = clamp((mem.longTermVault.length / Math.max(1, mem.longTermVault.length + mem.shortTermChunks.length || 1)) * 100, 5, 100);
   return `
-    <div class="meg-panel">
-      <h2>Memory Core</h2>
-      ${toggleGeneric("Enabled", "memoryCore.enabled", mem.enabled, "Archive older messages and inject relevant memory.")}
-      ${selectField("Architecture", "memoryCore.architecture", mem.architecture, [["raw_short_long", "Raw + Short + Long"], ["raw_long", "Raw + Long"]])}
-      ${selectField("Trigger", "memoryCore.triggerMode", mem.triggerMode, [["manual", "Manual"], ["frequency", "Frequency"]])}
-      ${inputField("Working Limit", "memoryCore.workingLimit", String(mem.workingLimit), "30", "number")}
-      ${inputField("Short-Term Limit", "memoryCore.shortTermLimit", String(mem.shortTermLimit), "70", "number")}
-      <button class="meg-btn primary" type="button" data-action="memory-process">Apply & Extract Pending</button>
+    ${tabHeader("Memory Core", "Advanced 3-tier context and history management.", "memory", "#38bdf8", mem.enabled ? "Enabled" : "Disabled", mem.enabled ? "#10b981" : "#a1a1aa")}
+    <div class="memory-dashboard">
+      ${statTile("Working", String(mem.workingLimit), "live messages", "#10b981")}
+      ${statTile("Short-Term", String(mem.shortTermChunks.length), "summaries", "#f59e0b")}
+      ${statTile("Long-Term", String(mem.longTermVault.length), "vault entries", "#3b82f6")}
+      ${statTile("Saved", `~${estimateTokensSaved()}`, "tokens", "#a855f7")}
     </div>
-    <div class="meg-grid compact">
-      ${statCard("Short-Term", String(mem.shortTermChunks.length), "AI summaries")}
-      ${statCard("Long-Term", String(mem.longTermVault.length), "raw vault entries")}
-      ${statCard("Saved", `~${estimateTokensSaved()}`, "estimated tokens")}
+    <div class="mtab-panel">
+      <div class="mtab-panel-title blue">${icon("memory")} Memory Architecture</div>
+      ${toggleGeneric("Enable Memory Core", "memoryCore.enabled", mem.enabled, "Archive older messages and inject relevant memory.")}
+      <div class="setting-grid">
+        ${selectField("Architecture", "memoryCore.architecture", mem.architecture, [["raw_short_long", "Raw + Short + Long"], ["raw_long", "Raw + Long"]])}
+        ${selectField("Scanner", "memoryCore.scannerEngine", mem.scannerEngine, [["tfidf", "TF-IDF Retrieval"], ["semantic", "Semantic Memory"]])}
+        ${selectField("Trigger", "memoryCore.triggerMode", mem.triggerMode, [["manual", "Manual"], ["frequency", "Every X Replies"]])}
+        ${inputField("Auto Frequency", "memoryCore.autoFreq", String(mem.autoFreq), "10", "number")}
+        ${inputField("Working Limit", "memoryCore.workingLimit", String(mem.workingLimit), "30", "number")}
+        ${inputField("Short-Term Limit", "memoryCore.shortTermLimit", String(mem.shortTermLimit), "70", "number")}
+      </div>
+      <div class="mem-progress"><span class="mem-prog-working" style="width:${workingPct}%"></span><span class="mem-prog-short" style="width:${shortPct}%"></span><span class="mem-prog-long" style="width:${longPct}%"></span></div>
+      <button class="wstyle-gen-btn blue-bg" type="button" data-action="memory-process">${icon("bolt")} Apply & Extract Pending</button>
     </div>
-    <div class="meg-panel">
-      <h2>Vault</h2>
-      ${(mem.longTermVault || []).slice(-20).reverse().map((chunk) => `<details><summary>${escapeHtml(chunk.id)}</summary><pre>${escapeHtml(chunk.text || chunk.summary || "")}</pre></details>`).join("") || `<span class="meg-muted">No vault entries yet.</span>`}
+    <div class="mtab-panel">
+      <div class="mtab-panel-title blue">${icon("book")} Long-Term Vault</div>
+      ${(mem.longTermVault || []).slice(-20).reverse().map((chunk) => `<details class="mem-accordion"><summary>${escapeHtml(chunk.id)} <span>${new Date(chunk.timestamp).toLocaleString()}</span></summary><pre>${escapeHtml(chunk.text || chunk.summary || "")}</pre></details>`).join("") || `<span class="empty-text">No vault entries yet.</span>`}
     </div>`;
 }
 
 function renderDev(): string {
   return `
-    <div class="meg-panel">
-      <h2>Visual Engine Builder</h2>
-      <input id="dev-id" class="meg-input" placeholder="engine_id">
-      <input id="dev-label" class="meg-input" placeholder="Display name">
-      <textarea id="dev-p1" class="meg-textarea tall" placeholder="Prompt 1"></textarea>
-      <textarea id="dev-p4" class="meg-textarea tall" placeholder="Prompt 4"></textarea>
-      <textarea id="dev-p6" class="meg-textarea tall" placeholder="Prompt 6"></textarea>
-      <button class="meg-btn primary" type="button" data-action="dev-save">Save Engine</button>
-    </div>
-    <div class="meg-list">
-      ${state.customEngines.map((engine) => `<div class="meg-panel row"><strong>${escapeHtml(engine.label || engine.id)}</strong><button class="meg-btn subtle danger" type="button" data-action="dev-delete" data-id="${escapeHtml(engine.id)}">Delete</button></div>`).join("")}
+    ${tabHeader("Dev Engine Builder", "Clone, edit, and save custom Megumin engine blocks.", "code", "#a855f7", `${state.customEngines.length} Custom`, "#a855f7")}
+    <div class="dev-layout">
+      <div class="mtab-panel">
+        <div class="mtab-panel-title purple">${icon("wand")} Create Engine</div>
+        <div class="setting-grid">
+          <label class="ps-field"><span>Engine ID</span><input id="dev-id" class="ps-modern-input" placeholder="engine_id"></label>
+          <label class="ps-field"><span>Display Name</span><input id="dev-label" class="ps-modern-input" placeholder="Display name"></label>
+        </div>
+        <textarea id="dev-p1" class="ps-modern-input dev-area" placeholder="[[prompt1]] Root / setup block"></textarea>
+        <textarea id="dev-p3" class="ps-modern-input dev-area" placeholder="[[prompt3]] Middle engine block"></textarea>
+        <textarea id="dev-p4" class="ps-modern-input dev-area" placeholder="[[prompt4]] Physicality / rules block"></textarea>
+        <textarea id="dev-p5" class="ps-modern-input dev-area" placeholder="[[prompt5]] Continuation block"></textarea>
+        <textarea id="dev-p6" class="ps-modern-input dev-area" placeholder="[[prompt6]] Final reminder block"></textarea>
+        <button class="wstyle-gen-btn green-bg" type="button" data-action="dev-save">${icon("save")} Save Engine</button>
+      </div>
+      <div class="mtab-panel">
+        <div class="mtab-panel-title green">${icon("cubes")} Custom Engines</div>
+        ${state.customEngines.length ? state.customEngines.map((engine) => `<div class="custom-engine-row"><div><strong>${escapeHtml(engine.label || engine.id)}</strong><span>${escapeHtml(engine.id)}</span></div><button class="icon-btn danger" type="button" data-action="dev-delete" data-id="${escapeHtml(engine.id)}">${icon("trash")}</button></div>`).join("") : emptyWithMascot("No custom engines yet.", "Create one on the left, then select it from Core Engines.")}
+      </div>
     </div>`;
+}
+
+function tabHeader(title: string, sub: string, iconName: string, color: string, badge: string, badgeColor: string): string {
+  return `
+    <div class="mtab-header">
+      <div class="mtab-header-left">
+        <div class="mtab-header-icon" style="--header-color:${color};">${icon(iconName)}</div>
+        <div>
+          <h2>${escapeHtml(title)}</h2>
+          <p>${escapeHtml(sub)}</p>
+        </div>
+      </div>
+      <div class="mtab-header-badge" style="--badge-color:${badgeColor};">${icon("check")} ${escapeHtml(badge)}</div>
+    </div>`;
+}
+
+function filterPill(value: string, active: boolean, count: number): string {
+  return `<button class="wstyle-filter-pill ${active ? "active" : ""}" type="button" data-action="engine-filter" data-value="${escapeHtml(value)}">${escapeHtml(value === "all" ? "All" : value)} <span class="pill-count">${count}</span></button>`;
+}
+
+function stylePill(value: string, label: string, count: number): string {
+  return `<button class="wstyle-filter-pill ${state.styleFilter === value ? "active" : ""}" type="button" data-action="style-filter" data-value="${escapeHtml(value)}">${escapeHtml(label)} <span class="pill-count">${count}</span></button>`;
+}
+
+function engineCount(filter: string): number {
+  return state.engines.filter((engine) => engineMatchesFilter(engine, filter)).length;
+}
+
+function engineMatchesFilter(engine: EngineMode, filter: string): boolean {
+  if (filter === "all") return true;
+  if (filter === "Custom") return state.customEngines.some((item) => item.id === engine.id);
+  const label = `${engine.label || ""} ${engine.id || ""}`.toUpperCase();
+  return label.includes(filter.toUpperCase());
+}
+
+function engineCard(engine: EngineMode, desc: string): string {
+  const active = state.profile.mode === engine.id;
+  const locked = !!engine.locked;
+  const badges = [
+    active ? `<span class="ecard-badge active-badge">${icon("check")} Active</span>` : "",
+    engine.recommended ? `<span class="ecard-badge rec">${icon("star")} Recommended</span>` : "",
+    engine.isNew ? `<span class="ecard-badge new">New</span>` : "",
+    locked ? `<span class="ecard-badge locked">${icon("lock")} Coming Soon</span>` : ""
+  ].filter(Boolean).join("");
+  return `<button type="button" class="mtab-eng-card ${active ? "active" : ""} ${locked ? "locked-card" : ""}" ${locked ? "" : `data-action="select-engine" data-value="${escapeHtml(engine.id)}"`}>
+    <span class="ecard-accent" style="--accent:${engine.color || "#10b981"}"></span>
+    <span class="ecard-body">
+      <span class="ecard-title"><span>${escapeHtml(engine.label || engine.id)}</span></span>
+      <span class="ecard-desc">${escapeHtml(desc)}</span>
+      ${badges ? `<span class="badge-row">${badges}</span>` : ""}
+    </span>
+  </button>`;
+}
+
+function infoCard(input: { title: string; sub?: string; active?: boolean; action: string; path?: string; value?: string; badge?: string; index?: number }): string {
+  const attrs = [
+    `data-action="${escapeHtml(input.action)}"`,
+    input.path ? `data-path="${escapeHtml(input.path)}"` : "",
+    input.value !== undefined ? `data-value="${escapeHtml(input.value)}"` : "",
+    input.index !== undefined ? `data-index="${input.index}"` : ""
+  ].filter(Boolean).join(" ");
+  return `<button type="button" class="mtab-eng-card ${input.active ? "active" : ""}" ${attrs}>
+    <span class="ecard-accent"></span>
+    <span class="ecard-body">
+      <span class="ecard-title"><span>${escapeHtml(input.title)}</span>${input.badge ? `<span class="ecard-badge rec">${escapeHtml(input.badge)}</span>` : ""}</span>
+      <span class="ecard-desc">${escapeHtml(strip(input.sub || "").slice(0, 240))}</span>
+    </span>
+  </button>`;
+}
+
+function moduleCard(item: any, active: boolean, path: "addons" | "blocks"): string {
+  const desc = moduleDesc(item.id) || strip(item.content).slice(0, 180);
+  return `<button type="button" class="mtab-eng-card ${active ? "active" : ""}" data-action="toggle-array" data-path="${path}" data-value="${escapeHtml(item.id)}">
+    <span class="ecard-accent"></span>
+    <span class="ecard-body">
+      <span class="ecard-title"><span>${escapeHtml(item.label)}</span>${active ? `<span class="ecard-badge active-badge">${icon("check")} On</span>` : ""}</span>
+      <span class="ecard-desc">${escapeHtml(desc)}</span>
+      ${item.recommended ? `<span class="badge-row"><span class="ecard-badge rec">${icon("star")} Recommended</span></span>` : ""}
+    </span>
+  </button>`;
+}
+
+function toggleGeneric(label: string, path: string, active: boolean, desc: string): string {
+  return `<button type="button" class="mtab-toggle-row ${active ? "active" : ""}" data-action="toggle" data-path="${escapeHtml(path)}">
+    <span class="toggle-info"><span class="toggle-label">${escapeHtml(label)}</span><span class="toggle-desc">${escapeHtml(desc)}</span></span>
+    <span class="ps-switch"></span>
+  </button>`;
+}
+
+function inputField(label: string, path: string, value: string, placeholder = "", type = "text"): string {
+  return `<label class="ps-field ${label ? "" : "bare"}">${label ? `<span>${escapeHtml(label)}</span>` : ""}<input class="ps-modern-input" type="${type}" data-bind="${escapeHtml(path)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}"></label>`;
+}
+
+function rangeField(label: string, path: string, value: number, min: number, max: number): string {
+  return `<label class="mtab-param-row"><span class="param-label">${escapeHtml(label)} <b>${value}</b></span><input class="ps-modern-input" type="range" min="${min}" max="${max}" data-bind="${escapeHtml(path)}" value="${value}"></label>`;
+}
+
+function selectField(label: string, path: string, value: string, options: Array<[string, string]>): string {
+  return `<label class="ps-field ${label ? "" : "bare"}">${label ? `<span>${escapeHtml(label)}</span>` : ""}<select class="ps-modern-input" data-bind="${escapeHtml(path)}">
+    ${options.map(([id, text]) => `<option value="${escapeHtml(id)}" ${id === value ? "selected" : ""}>${escapeHtml(text)}</option>`).join("")}
+  </select></label>`;
+}
+
+function settingText(label: string, desc: string): string {
+  return `<span class="set-info"><span class="set-label">${escapeHtml(label)}</span><span class="set-desc">${escapeHtml(desc)}</span></span>`;
+}
+
+function lockedState(iconName: string, title: string, text: string): string {
+  return `<div class="mtab-locked-state">${icon(iconName)}<h3>${escapeHtml(title)}</h3><p>${escapeHtml(text)}</p></div>`;
+}
+
+function emptyWithMascot(title: string, text: string): string {
+  const image = state.uiAssets.mascotImage || "";
+  return `<div class="mtab-locked-state empty-state">${image ? `<img src="${escapeHtml(image)}" alt="">` : icon("spark")}<h3>${escapeHtml(title)}</h3><p>${escapeHtml(text)}</p></div>`;
+}
+
+function statTile(title: string, value: string, sub: string, color: string): string {
+  return `<div class="mem-stat" style="--stat-color:${color};"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(title)}</span><small>${escapeHtml(sub)}</small></div>`;
+}
+
+function preferredStyleForEngine(engineId: string): any | null {
+  const styles = state.logic?.directStyles || [];
+  const target = engineId === "v7-core" ? "dir_v7_core" : engineId === "v7-gentle" ? "dir_v7_gentle" : engineId.startsWith("v7") ? "dir_v7" : "";
+  return target ? styles.find((style: any) => style.id === target) || null : null;
+}
+
+function groupModels(models: any[]): Record<string, any[]> {
+  const groups: Record<string, any[]> = {};
+  for (const model of models) {
+    const id = String(model.id || "");
+    const group = id.includes("v7") ? "V7 Frameworks" : id.includes("chinese") ? "Chinese" : id.includes("japanese") ? "Japanese" : "Classic";
+    if (!groups[group]) groups[group] = [];
+    groups[group].push(model);
+  }
+  return groups;
+}
+
+function activeTabProfileKeys(): string[] {
+  if (state.devMode) return ["mode"];
+  const map: Record<number, string[]> = {
+    0: ["mode", "toggles", "activeStyleId", "aiRule"],
+    1: ["personality", "toggles"],
+    2: ["activeStyleId", "aiRule", "customStyles", "dnRatio"],
+    3: ["userWordCount", "userLanguage", "userPronouns", "disableUtilityPrefill", "onomatopoeia", "toggles"],
+    4: ["addons", "blocks"],
+    5: ["model", "thinkEffort", "customThinkEffort", "thinkingV2"],
+    6: ["storyPlan"],
+    7: ["banList", "banListBackend"],
+    8: ["imageGen"],
+    9: ["npcBank"],
+    10: ["memoryCore"]
+  };
+  return map[state.activeTab] || [];
+}
+
+function moduleDesc(id: string): string {
+  const descriptions: Record<string, string> = {
+    death: "Permanent consequences. Characters can die when the scene logic says they would.",
+    combat: "Grounded tactical combat where positioning, injury, fatigue, and numbers matter.",
+    direct: "Forces direct language and reduces polite evasions.",
+    color: "Color-coded dialogue formatting for easier parsing.",
+    npc_events: "Requires new events to grow from prior context or environmental cues.",
+    dn: "Wraps dialogue and narration in XML tags for provider-specific formatting.",
+    info: "A compact world-state panel with time, weather, location, and visible conditions.",
+    summary: "A running story digest updated by the assistant.",
+    cyoa: "A choose-your-own-action panel with suggested next moves.",
+    mvu: "MVU compatibility scaffolding for game-style state outputs.",
+    npc_inner_chatter: "Hidden NPC private thoughts that feed future behavior.",
+    npc_inner_chatter_v2: "A smaller NPC inner chatter block."
+  };
+  return descriptions[id] || "";
+}
+
+function personaDesc(id: string, content: string): string {
+  const descriptions: Record<string, string> = {
+    megumin: "A rebellious, dominant voice with sharper story energy.",
+    director: "Professional narrator with clean cinematic direction.",
+    Nora: "Nora should I say more.",
+    engine: "No personality overlay. The engine speaks in its purest form."
+  };
+  return descriptions[id] || content;
+}
+
+function readableModel(id: string): string {
+  return id.replace(/^cot-/, "").replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function estimateTokensSaved(): number {
@@ -546,44 +973,16 @@ function estimateTokensSaved(): number {
   return Math.ceil(chars / 4);
 }
 
-function toggleRow(label: string, key: string, desc: string): string {
-  return toggleGeneric(label, `toggles.${key}`, !!state.profile.toggles[key], desc);
-}
-
-function toggleGeneric(label: string, path: string, active: boolean, desc: string): string {
-  return `<button type="button" class="meg-toggle ${active ? "active" : ""}" data-action="toggle" data-path="${path}">
-    <span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(desc)}</small></span><i></i>
-  </button>`;
-}
-
-function card(input: { title: string; sub?: string; active?: boolean; color?: string; action: string; path?: string; value?: string }): string {
-  return `<button type="button" class="meg-card ${input.active ? "active" : ""}" data-action="${input.action}" data-path="${input.path || ""}" data-value="${escapeHtml(input.value || "")}" style="--accent:${input.color || "#10b981"}">
-    <strong>${escapeHtml(input.title)}</strong><span>${escapeHtml(input.sub || "")}</span>
-  </button>`;
-}
-
-function multiCard(title: string, sub: string, active: boolean, path: "addons" | "blocks", value: string): string {
-  return `<button type="button" class="meg-card ${active ? "active" : ""}" data-action="toggle-array" data-path="${path}" data-value="${escapeHtml(value)}">
-    <strong>${escapeHtml(title)}</strong><span>${escapeHtml(strip(sub).slice(0, 180))}</span>
-  </button>`;
-}
-
-function statCard(title: string, value: string, sub: string): string {
-  return `<div class="meg-panel stat"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(title)}</span><small>${escapeHtml(sub)}</small></div>`;
-}
-
-function inputField(label: string, path: string, value: string, placeholder = "", type = "text"): string {
-  return `<label class="meg-field"><span>${escapeHtml(label)}</span><input class="meg-input" type="${type}" data-bind="${path}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}"></label>`;
-}
-
-function rangeField(label: string, path: string, value: number, min: number, max: number): string {
-  return `<label class="meg-field"><span>${escapeHtml(label)}</span><input class="meg-input" type="range" min="${min}" max="${max}" data-bind="${path}" value="${value}"><b>${value}</b></label>`;
-}
-
-function selectField(label: string, path: string, value: string, options: Array<[string, string]>): string {
-  return `<label class="meg-field"><span>${escapeHtml(label)}</span><select class="meg-input" data-bind="${path}">
-    ${options.map(([id, text]) => `<option value="${escapeHtml(id)}" ${id === value ? "selected" : ""}>${escapeHtml(text)}</option>`).join("")}
-  </select></label>`;
+function estimatePayloadTokens(): number {
+  const profileText = JSON.stringify({
+    mode: state.profile.mode,
+    aiRule: state.profile.aiRule,
+    addons: state.profile.addons,
+    blocks: state.profile.blocks,
+    story: state.profile.storyPlan.currentPlan,
+    memory: [...state.profile.memoryCore.shortTermChunks, ...state.profile.memoryCore.longTermVault].slice(-8)
+  });
+  return Math.max(0, Math.ceil(profileText.length / 4));
 }
 
 function getPath(target: any, path: string): any {
@@ -612,6 +1011,10 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
 function renderMeguminImageTag(payload: any) {
   if (!ctxRef || !payload?.messageId) return;
   const bubble = ctxRef.dom.findMessageElement(payload.messageId);
@@ -628,70 +1031,241 @@ function renderMeguminImageTag(payload: any) {
   ctxRef.dom.inject(bubble, html, "beforeend");
 }
 
+function icon(name: string): string {
+  const paths: Record<string, string> = {
+    wand: `<path d="m15 4 5 5-11 11-5-5 11-11Z"/><path d="m14 5 5 5"/><path d="M5 4v3M3.5 5.5h3M20 16v3M18.5 17.5h3M8 2l.7 1.7L10.5 4l-1.8.7L8 6.5l-.7-1.8L5.5 4l1.8-.7L8 2Z"/>`,
+    spark: `<path d="M12 2l1.7 5.1L19 9l-5.3 1.9L12 16l-1.7-5.1L5 9l5.3-1.9L12 2Z"/><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14Z"/>`,
+    server: `<rect x="3" y="4" width="18" height="6" rx="2"/><rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 7h.01M7 17h.01M11 7h6M11 17h6"/>`,
+    microchip: `<rect x="7" y="7" width="10" height="10" rx="2"/><path d="M9 1v4M15 1v4M9 19v4M15 19v4M1 9h4M1 15h4M19 9h4M19 15h4"/>`,
+    masks: `<path d="M7 10h.01M11 10h.01M9 14c1.5 1 3 1 4 0"/><path d="M3 5c4-2 8-2 12 0v5c0 5-3 8-6 8s-6-3-6-8V5Z"/><path d="M15 7c2-.4 4-.1 6 1v4c0 4-2 6-5 7"/>`,
+    pen: `<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"/>`,
+    globe: `<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2c3 3 3 17 0 20M12 2c-3 3-3 17 0 20"/>`,
+    puzzle: `<path d="M9 3h6v4a2 2 0 1 0 0 4v4h-4a2 2 0 1 1-4 0H3V9h4a2 2 0 1 0 2-2V3Z"/>`,
+    cubes: `<path d="m12 2 7 4v8l-7 4-7-4V6l7-4Z"/><path d="M12 10 5 6M12 10l7-4M12 10v8"/>`,
+    brain: `<path d="M9 3a3 3 0 0 0-3 3v1a3 3 0 0 0-2 5 3 3 0 0 0 2 5v1a3 3 0 0 0 5 2V3H9Z"/><path d="M15 3a3 3 0 0 1 3 3v1a3 3 0 0 1 2 5 3 3 0 0 1-2 5v1a3 3 0 0 1-5 2V3h2Z"/>`,
+    map: `<path d="m9 18-6 3V6l6-3 6 3 6-3v15l-6 3-6-3Z"/><path d="M9 3v15M15 6v15"/>`,
+    ban: `<circle cx="12" cy="12" r="9"/><path d="M5.5 5.5 18.5 18.5"/>`,
+    image: `<rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8" cy="10" r="2"/><path d="m21 15-5-5L5 19"/>`,
+    address: `<path d="M7 3h10a2 2 0 0 1 2 2v16H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"/><path d="M9 7h6M9 11h6M9 15h4"/>`,
+    memory: `<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 1v3M16 1v3M8 20v3M16 20v3M1 8h3M1 16h3M20 8h3M20 16h3M8 8h8v8H8Z"/>`,
+    code: `<path d="m8 9-4 3 4 3M16 9l4 3-4 3M14 4l-4 16"/>`,
+    refresh: `<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/>`,
+    reset: `<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 3v6h6"/>`,
+    save: `<path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8M7 3v5h8"/>`,
+    check: `<path d="M20 6 9 17l-5-5"/>`,
+    star: `<path d="m12 2 3 6 7 .9-5 4.8 1.2 6.8L12 17l-6.2 3.5L7 13.7 2 8.9 9 8l3-6Z"/>`,
+    lock: `<rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/>`,
+    settings: `<path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="M3 12h2M19 12h2M12 3v2M12 19v2M5.6 5.6 7 7M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/>`,
+    bolt: `<path d="M13 2 3 14h8l-1 8 11-14h-8l1-6Z"/>`,
+    plus: `<path d="M12 5v14M5 12h14"/>`,
+    trash: `<path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 11v6M14 11v6"/>`,
+    link: `<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/>`,
+    sliders: `<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/>`,
+    info: `<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>`,
+    radar: `<path d="M20 12a8 8 0 1 1-8-8"/><path d="M12 12 20 4M12 8a4 4 0 1 0 4 4"/>`,
+    list: `<path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/>`,
+    x: `<path d="M18 6 6 18M6 6l12 12"/>`,
+    search: `<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>`,
+    book: `<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15Z"/>`,
+    hammer: `<path d="m15 12 6 6-3 3-6-6M14 4l6 6M4 14l7-7 3 3-7 7H4v-3Z"/>`
+  };
+  return `<svg class="meg-svg meg-${escapeHtml(name)}" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.spark}</svg>`;
+}
+
 function styles(): string {
   return `
-.meg-float { width:52px;height:52px; }
-.meg-float-btn { width:52px;height:52px;border-radius:16px;border:1px solid rgba(245,158,11,.45);background:#18181b;color:#f59e0b;font-weight:900;font-size:22px;box-shadow:0 12px 34px rgba(0,0,0,.35);cursor:pointer; }
-.meg-float-btn:hover { transform:translateY(-1px); background:#232329; }
-.meg-shell { position:fixed; inset:0; display:grid; grid-template-columns:76px minmax(0,1fr); background:#0d0e10; color:#f4f4f5; font-family:Inter, ui-sans-serif, system-ui, sans-serif; z-index:1; }
-.meg-dock { padding:16px 10px; display:flex; flex-direction:column; gap:8px; background:#111215; border-right:1px solid #2a2c32; }
-.meg-dock-btn { height:44px; border:1px solid #2a2c32; background:#181a1f; color:#a1a1aa; border-radius:8px; cursor:pointer; font-weight:800; }
-.meg-dock-btn.active { color:#111; background:#f59e0b; border-color:#f59e0b; }
-.meg-window { min-width:0; display:flex; flex-direction:column; height:100vh; }
-.meg-hero { min-height:168px; display:flex; align-items:end; justify-content:space-between; gap:24px; padding:28px 34px; background:linear-gradient(115deg,#15171d,#20242b 45%,#111215); border-bottom:1px solid #2a2c32; }
-.meg-hero h1 { margin:0; font-size:42px; line-height:1; letter-spacing:0; }
-.meg-hero p { margin:8px 0 0; color:#a1a1aa; }
-.meg-status { color:#f59e0b; font-size:12px; font-weight:900; text-transform:uppercase; }
-.meg-actions { display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:end; }
-.meg-save { color:#a1a1aa; font-size:13px; }
-.meg-save.saving { color:#f59e0b; }
-.meg-content { padding:24px 34px 42px; overflow:auto; display:flex; flex-direction:column; gap:18px; }
-.meg-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:12px; }
-.meg-grid.compact { grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); }
-.meg-panel { background:#17191e; border:1px solid #2a2c32; border-radius:8px; padding:16px; color:#f4f4f5; }
-.meg-panel h2 { margin:0 0 12px; font-size:17px; letter-spacing:0; }
-.meg-panel.two { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
-.meg-panel.row { display:flex; align-items:center; justify-content:space-between; gap:14px; }
-.meg-panel.stat strong { display:block; font-size:28px; color:#f59e0b; }
-.meg-panel.stat span { font-weight:800; }
-.meg-panel.stat small, .meg-muted { color:#a1a1aa; }
-.meg-card { min-height:116px; text-align:left; display:flex; flex-direction:column; gap:8px; padding:14px; border-radius:8px; border:1px solid #2a2c32; background:#111215; color:#f4f4f5; cursor:pointer; overflow:hidden; }
-.meg-card strong { font-size:15px; }
-.meg-card span { color:#a1a1aa; font-size:12px; line-height:1.35; }
-.meg-card.active { border-color:var(--accent,#f59e0b); box-shadow:0 0 0 1px var(--accent,#f59e0b) inset; }
-.meg-toggle { width:100%; display:flex; justify-content:space-between; gap:16px; align-items:center; border:1px solid #2a2c32; background:#111215; color:#f4f4f5; border-radius:8px; padding:12px 14px; margin:8px 0; cursor:pointer; text-align:left; }
-.meg-toggle small { display:block; color:#a1a1aa; margin-top:3px; }
-.meg-toggle i { width:38px; height:22px; border-radius:999px; background:#3f3f46; position:relative; flex:0 0 auto; }
-.meg-toggle i:after { content:""; width:18px; height:18px; background:#fff; border-radius:50%; position:absolute; top:2px; left:2px; transition:.18s; }
-.meg-toggle.active { border-color:#f59e0b; }
-.meg-toggle.active i { background:#f59e0b; }
-.meg-toggle.active i:after { left:18px; background:#111; }
-.meg-field { display:flex; flex-direction:column; gap:6px; color:#a1a1aa; font-size:12px; font-weight:800; text-transform:uppercase; }
-.meg-input, .meg-textarea { width:100%; box-sizing:border-box; background:#101115; color:#f4f4f5; border:1px solid #2a2c32; border-radius:8px; padding:10px 12px; font:inherit; text-transform:none; }
-.meg-textarea { min-height:118px; resize:vertical; }
-.meg-textarea.tall { min-height:190px; }
-.meg-textarea.xl { min-height:360px; margin-top:14px; }
-.meg-btn { border:1px solid #2a2c32; border-radius:8px; padding:9px 14px; cursor:pointer; font-weight:800; background:#111215; color:#f4f4f5; }
-.meg-btn.primary { background:#10b981; border-color:#10b981; color:#051b13; }
-.meg-btn.subtle { background:#111215; }
-.meg-btn.danger, .meg-btn.subtle.danger { color:#f87171; border-color:rgba(248,113,113,.45); }
-.meg-tags, .meg-row-wrap { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
-.meg-tag, .meg-chip { border:1px solid #2a2c32; border-radius:999px; padding:7px 10px; background:#111215; color:#f4f4f5; cursor:pointer; }
-.meg-list { display:flex; flex-direction:column; gap:12px; }
-.meg-panel.npc { display:grid; grid-template-columns:96px minmax(0,1fr); gap:14px; }
-.npc-img { width:96px; height:96px; border-radius:8px; object-fit:cover; background:#101115; border:1px solid #2a2c32; display:grid; place-items:center; color:#f59e0b; font-size:32px; font-weight:900; }
-details { border-top:1px solid #2a2c32; padding:10px 0; }
-pre { white-space:pre-wrap; color:#d4d4d8; }
-.meg-inline-image { margin-top:10px; border:1px solid #2a2c32; background:#111215; border-radius:8px; overflow:hidden; max-width:420px; }
+.megumin-suite-app { z-index: 1; }
+.meg-float { width:52px; height:52px; }
+.meg-float-btn { width:52px; height:52px; border-radius:14px; border:1px solid rgba(255,255,255,.12); background:#18181b; color:#f4f4f5; cursor:pointer; display:grid; place-items:center; box-shadow:0 16px 34px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.05); transition:transform .2s ease, background .2s ease, border-color .2s ease; }
+.meg-float-btn:hover { transform:translateY(-2px); background:#27272a; border-color:rgba(255,255,255,.22); }
+.meg-float-btn .meg-svg { width:30px; height:30px; color:#ffffff; filter:drop-shadow(0 2px 6px rgba(0,0,0,.45)); }
+.meg-float-btn .meg-wand path:first-child { fill:#ffffff; stroke:#ffffff; }
+.meg-float-btn .meg-wand path:nth-child(2) { stroke:#38bdf8; stroke-width:2.6; }
+.meg-float-btn .meg-wand path:last-child { fill:#fbbf24; stroke:#fbbf24; }
+.meg-svg { width:16px; height:16px; flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.meg-overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.68); backdrop-filter:blur(4px); font-family:Inter, ui-sans-serif, system-ui, sans-serif; color:#f4f4f5; }
+.ps-modern-modal.app-container { width:min(1380px, calc(100vw - 40px)); height:calc(100dvh - 40px); background:#18181b; border:1px solid #27272a; border-radius:16px; box-shadow:0 25px 60px rgba(0,0,0,.7); display:flex; position:relative; overflow:hidden; }
+.main-wrapper { flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
+.hero-banner { height:220px; width:100%; background-position:center 26%; background-size:cover; position:relative; display:flex; flex-direction:column; justify-content:space-between; flex-shrink:0; background-color:#111; }
+.hero-banner::before { content:""; position:absolute; inset:0; background:radial-gradient(circle at 75% 20%, rgba(245,158,11,.22), transparent 32%); pointer-events:none; }
+.hero-overlay { position:absolute; inset:0; background:linear-gradient(to right, rgba(0,0,0,.92) 0%, rgba(24,24,27,.48) 52%, rgba(24,24,27,.86) 100%); }
+.hero-overlay::after { content:""; position:absolute; inset:0; background:linear-gradient(to top, #18181b 0%, transparent 72%); }
+.top-app-bar { position:relative; z-index:2; padding:20px 28px; display:flex; justify-content:flex-end; }
+.app-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
+.live-token-count { color:#a1a1aa; background:rgba(0,0,0,.5); padding:8px 12px; border-radius:8px; border:1px solid #27272a; backdrop-filter:blur(4px); font-size:12px; font-weight:800; display:flex; gap:6px; align-items:center; }
+.ps-save-indicator { color:#a1a1aa; font-size:12px; font-weight:800; min-width:54px; }
+.ps-save-indicator.saving { color:#f59e0b; }
+.hero-content { position:relative; z-index:2; padding:0 30px 28px 104px; }
+.hero-content .status { font-size:12px; font-weight:900; color:#f59e0b; text-transform:uppercase; letter-spacing:0; margin-bottom:6px; text-shadow:0 2px 4px rgba(0,0,0,.8); }
+.hero-content .name { font-size:42px; font-weight:900; margin:0; line-height:1.05; color:#fff; letter-spacing:0; text-shadow:0 4px 10px rgba(0,0,0,.8); }
+.hero-content p { margin:8px 0 0; color:#d4d4d8; font-size:14px; max-width:760px; text-shadow:0 2px 4px rgba(0,0,0,.7); }
+.dock { position:absolute; top:20px; bottom:20px; left:20px; width:60px; background:rgba(18,18,20,.72); backdrop-filter:blur(15px); border:1px solid rgba(255,255,255,.1); border-radius:12px; display:flex; flex-direction:column; padding:14px 0; gap:4px; transition:width .3s cubic-bezier(.4,0,.2,1), box-shadow .3s; overflow:hidden; z-index:50; }
+.dock:hover { width:250px; box-shadow:10px 10px 40px rgba(0,0,0,.8); }
+.dock-icon { display:flex; align-items:center; gap:14px; width:238px; height:48px; margin:0 10px; padding:0 14px; border:0; border-radius:8px; color:#a1a1aa; background:transparent; cursor:pointer; font-weight:800; font-size:13px; text-align:left; transition:.2s ease; }
+.dock-icon .meg-svg { width:19px; height:19px; }
+.dock-icon span { opacity:0; pointer-events:none; transition:opacity .2s; white-space:nowrap; }
+.dock:hover .dock-icon span { opacity:1; transition-delay:.1s; }
+.dock-icon:hover { color:#fff; background:rgba(255,255,255,.1); }
+.dock-icon.active { color:#f59e0b; background:rgba(245,158,11,.15); }
+.main-content { flex:1; padding:22px 34px 42px 104px; overflow:auto; background:#0e0e11; display:flex; flex-direction:column; gap:18px; }
+.main-content::-webkit-scrollbar { width:10px; }
+.main-content::-webkit-scrollbar-track { background:#0e0e11; }
+.main-content::-webkit-scrollbar-thumb { background:#3f3f46; border-radius:999px; border:2px solid #0e0e11; }
+.ps-modern-btn, .wstyle-gen-btn, .icon-btn { border:1px solid #27272a; border-radius:8px; background:#111; color:#f4f4f5; cursor:pointer; font-weight:900; display:inline-flex; align-items:center; justify-content:center; gap:7px; transition:.18s ease; white-space:nowrap; }
+.ps-modern-btn { padding:9px 13px; font-size:12px; }
+.ps-modern-btn:hover, .wstyle-gen-btn:hover, .icon-btn:hover { transform:translateY(-1px); border-color:rgba(255,255,255,.24); }
+.ps-modern-btn.primary { background:#10b981; border-color:#10b981; color:#03140e; }
+.ps-modern-btn.secondary.gold { color:#f59e0b; border-color:rgba(245,158,11,.35); background:rgba(0,0,0,.35); }
+.ps-modern-btn.secondary.danger, .danger { color:#f87171; border-color:rgba(239,68,68,.35); }
+.ps-modern-btn.secondary.purple { color:#c084fc; border-color:rgba(168,85,247,.35); }
+.ps-modern-btn.secondary.purple.active { background:rgba(168,85,247,.16); }
+.ps-modern-btn.mini, .icon-btn.mini { padding:6px 9px; font-size:11px; }
+.icon-btn { width:34px; height:34px; padding:0; }
+.wstyle-gen-btn { padding:10px 16px; background:linear-gradient(135deg,#f59e0b,#d97706); border-color:transparent; color:#111; font-size:12px; }
+.wstyle-gen-btn.purple-bg { background:linear-gradient(135deg,#a855f7,#7c3aed); color:#fff; }
+.wstyle-gen-btn.blue-bg { background:linear-gradient(135deg,#06b6d4,#0891b2); color:#fff; }
+.wstyle-gen-btn.green-bg { background:linear-gradient(135deg,#10b981,#059669); color:#03140e; }
+.mtab-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:2px; }
+.mtab-header-left { display:flex; align-items:center; gap:14px; min-width:0; }
+.mtab-header-icon { width:48px; height:48px; border-radius:8px; display:grid; place-items:center; background:linear-gradient(135deg,var(--header-color),color-mix(in srgb,var(--header-color) 72%,#000)); color:#fff; box-shadow:0 12px 28px rgba(0,0,0,.25); }
+.mtab-header-icon .meg-svg { width:24px; height:24px; }
+.mtab-header h2 { margin:0; font-size:26px; line-height:1.1; letter-spacing:0; }
+.mtab-header p { margin:5px 0 0; color:#a1a1aa; font-size:13px; }
+.mtab-header-badge { border:1px solid color-mix(in srgb,var(--badge-color) 38%,transparent); color:var(--badge-color); background:color-mix(in srgb,var(--badge-color) 14%,transparent); padding:8px 12px; border-radius:999px; font-size:12px; font-weight:900; display:flex; gap:6px; align-items:center; }
+.wstyle-filters { display:flex; flex-wrap:wrap; gap:8px; margin:4px 0; }
+.wstyle-filter-pill { border:1px solid #27272a; background:#111; color:#a1a1aa; border-radius:999px; padding:7px 12px; cursor:pointer; font-size:12px; font-weight:900; display:flex; align-items:center; gap:7px; }
+.wstyle-filter-pill.active { color:#111; background:#f59e0b; border-color:#f59e0b; }
+.pill-count { border-radius:999px; padding:1px 7px; background:rgba(255,255,255,.14); }
+.wstyle-section-head { color:#d4d4d8; font-size:13px; font-weight:900; display:flex; align-items:center; gap:8px; margin:12px 0 0; }
+.wstyle-section-head.gold { color:#f59e0b; }
+.wstyle-section-head.green { color:#10b981; }
+.wstyle-section-head.purple { color:#a855f7; }
+.wstyle-section-head.blue { color:#38bdf8; }
+.wstyle-section-head.red { color:#ef4444; }
+.mtab-card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(245px,1fr)); gap:12px; }
+.mtab-card-grid.compact { grid-template-columns:repeat(auto-fill,minmax(188px,1fr)); }
+.mtab-eng-card { min-height:132px; position:relative; text-align:left; border:1px solid #27272a; border-radius:8px; background:#101114; color:#f4f4f5; cursor:pointer; overflow:hidden; padding:0; display:flex; transition:transform .18s ease, border-color .18s ease, background .18s ease; }
+.mtab-eng-card:hover { transform:translateY(-2px); border-color:rgba(245,158,11,.55); background:#15161a; }
+.mtab-eng-card.active { border-color:#10b981; background:rgba(16,185,129,.05); }
+.mtab-eng-card.locked-card { opacity:.55; cursor:not-allowed; }
+.ecard-accent { position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,var(--accent,#27272a),transparent); }
+.mtab-eng-card.active .ecard-accent { background:linear-gradient(90deg,#10b981,#059669,transparent); }
+.ecard-body { padding:16px; display:flex; flex-direction:column; gap:8px; width:100%; }
+.ecard-title { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; color:#fff; font-size:15px; font-weight:900; line-height:1.25; }
+.ecard-desc { color:#a1a1aa; font-size:12px; line-height:1.45; display:block; }
+.badge-row { display:flex; flex-wrap:wrap; gap:6px; margin-top:auto; }
+.ecard-badge { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:900; border-radius:999px; padding:4px 7px; color:#a1a1aa; background:rgba(255,255,255,.06); }
+.ecard-badge.rec { color:#f59e0b; background:rgba(245,158,11,.12); }
+.ecard-badge.new { color:#3b82f6; background:rgba(59,130,246,.15); }
+.ecard-badge.locked { color:#a1a1aa; background:rgba(82,82,91,.25); }
+.ecard-badge.active-badge { color:#10b981; background:rgba(16,185,129,.15); }
+.mtab-card-list { display:flex; flex-direction:column; gap:8px; }
+.mtab-card-list.dashed { min-height:64px; padding:12px; border:1px dashed #27272a; border-radius:8px; background:rgba(0,0,0,.12); }
+.mtab-toggle-row { width:100%; display:flex; justify-content:space-between; align-items:center; gap:18px; border:1px solid #27272a; border-radius:8px; background:#101114; color:#f4f4f5; padding:14px 16px; cursor:pointer; text-align:left; transition:.18s ease; }
+.mtab-toggle-row:hover { border-color:rgba(245,158,11,.45); background:#15161a; }
+.mtab-toggle-row.active { border-color:#f59e0b; background:rgba(245,158,11,.035); }
+.toggle-info { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.toggle-label { color:#fff; font-size:13px; font-weight:900; }
+.toggle-desc { color:#a1a1aa; font-size:12px; line-height:1.4; }
+.ps-switch { width:38px; height:22px; border-radius:999px; background:#3f3f46; position:relative; flex:0 0 auto; transition:.18s; }
+.ps-switch::after { content:""; width:18px; height:18px; border-radius:50%; background:#fff; position:absolute; top:2px; left:2px; transition:.18s; }
+.mtab-toggle-row.active .ps-switch { background:#f59e0b; }
+.mtab-toggle-row.active .ps-switch::after { left:18px; background:#111; }
+.mtab-panel, .wstyle-dnr-panel { background:#18191f; border:1px solid #27272a; border-radius:8px; padding:16px; }
+.mtab-panel-title { margin:0 0 14px; color:#f4f4f5; font-weight:900; font-size:15px; display:flex; align-items:center; gap:8px; }
+.mtab-panel-title.gold { color:#f59e0b; }
+.mtab-panel-title.green { color:#10b981; }
+.mtab-panel-title.purple { color:#a855f7; }
+.mtab-panel-title.blue { color:#38bdf8; }
+.mtab-panel-title.red { color:#ef4444; }
+.panel-heading-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
+.mtab-setting-row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:13px 0; border-top:1px solid rgba(255,255,255,.06); }
+.mtab-setting-row:first-child { border-top:0; padding-top:0; }
+.set-info { display:flex; flex-direction:column; gap:4px; min-width:0; }
+.set-label { color:#fff; font-size:13px; font-weight:900; }
+.set-desc { color:#a1a1aa; font-size:12px; }
+.ps-field { display:flex; flex-direction:column; gap:6px; color:#a1a1aa; font-size:11px; font-weight:900; text-transform:uppercase; }
+.ps-field.bare { min-width:min(240px, 45vw); }
+.ps-modern-input { width:100%; box-sizing:border-box; background:#0e0e11; border:1px solid #27272a; color:#f4f4f5; border-radius:8px; padding:10px 12px; font:inherit; font-size:13px; text-transform:none; outline:none; }
+.ps-modern-input:focus { border-color:#f59e0b; box-shadow:0 0 0 3px rgba(245,158,11,.12); }
+textarea.ps-modern-input { min-height:108px; resize:vertical; line-height:1.45; }
+.textarea-xl { min-height:280px !important; }
+.dev-area { min-height:90px !important; font-family:ui-monospace, SFMono-Regular, Consolas, monospace; font-size:12px; }
+.setting-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin:8px 0 12px; }
+.mtab-param-row { display:flex; flex-direction:column; gap:8px; margin-top:12px; }
+.param-label { color:#a1a1aa; font-size:12px; font-weight:900; display:flex; justify-content:space-between; }
+.mtab-locked-state { border:1px dashed #27272a; border-radius:8px; padding:28px; background:#101114; text-align:center; color:#a1a1aa; display:grid; place-items:center; gap:10px; }
+.mtab-locked-state .meg-svg { width:34px; height:34px; color:#a855f7; }
+.mtab-locked-state h3 { margin:0; color:#fff; font-size:18px; }
+.mtab-locked-state p { margin:0; max-width:640px; line-height:1.45; }
+.empty-state img { width:110px; height:110px; object-fit:cover; border-radius:12px; border:1px solid #27272a; }
+.mtab-callout { display:flex; align-items:flex-start; gap:10px; margin-top:12px; padding:12px; border-radius:8px; background:rgba(99,102,241,.07); color:#c7d2fe; border:1px solid rgba(99,102,241,.16); font-size:12px; line-height:1.45; }
+.mtab-callout.gold { background:rgba(245,158,11,.07); color:#fbbf24; border-color:rgba(245,158,11,.18); }
+.mtab-callout.purple { background:rgba(168,85,247,.07); color:#d8b4fe; border-color:rgba(168,85,247,.18); }
+.inline-form { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:10px; align-items:stretch; }
+.mtab-ban-item { display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid rgba(239,68,68,.2); border-radius:8px; padding:10px 12px; background:rgba(239,68,68,.06); color:#fca5a5; cursor:pointer; text-align:left; }
+.mtab-ban-item:hover { background:rgba(239,68,68,.12); }
+.empty-text { color:#a1a1aa; font-size:13px; padding:8px; }
+.image-lab { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(260px,.75fr); gap:14px; }
+.visual-preview { min-height:260px; border-radius:8px; border:1px solid #27272a; background:#0e0e11 center/cover; overflow:hidden; position:relative; display:flex; align-items:flex-end; }
+.visual-preview::before { content:""; position:absolute; inset:0; background:linear-gradient(to top, rgba(0,0,0,.9), transparent 75%); }
+.visual-preview div { position:relative; z-index:1; padding:16px; font-weight:900; color:#fff; display:flex; gap:8px; align-items:center; }
+.resolution-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:8px; margin-bottom:14px; }
+.res-pill { border:1px solid #27272a; background:#101114; color:#a1a1aa; border-radius:8px; padding:9px; cursor:pointer; font-weight:800; font-size:12px; text-align:left; }
+.res-pill.active { color:#111; background:#f59e0b; border-color:#f59e0b; }
+.placeholder-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; margin-top:12px; }
+.placeholder-grid div { display:flex; flex-direction:column; gap:4px; border:1px solid #27272a; border-radius:8px; padding:10px; background:#0e0e11; }
+.placeholder-grid code { color:#f59e0b; font-size:12px; }
+.placeholder-grid span { color:#a1a1aa; font-size:12px; }
+.npc-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(330px,1fr)); gap:12px; }
+.npc-card { display:grid; grid-template-columns:104px minmax(0,1fr); gap:14px; border:1px solid #27272a; border-radius:8px; padding:12px; background:#18191f; }
+.npc-img { width:104px; height:104px; border-radius:8px; object-fit:cover; border:1px solid #27272a; background:#0e0e11; display:grid; place-items:center; color:#f59e0b; font-size:38px; font-weight:900; }
+.npc-title-row { display:flex; justify-content:space-between; gap:8px; align-items:start; }
+.npc-title-row h3 { margin:0; font-size:17px; }
+.npc-meta, .npc-body p { color:#a1a1aa; font-size:12px; line-height:1.45; margin:6px 0; }
+.npc-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+.memory-dashboard { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.mem-stat { border:1px solid #27272a; border-radius:8px; padding:16px; background:#18191f; }
+.mem-stat strong { display:block; color:var(--stat-color); font-size:28px; line-height:1; }
+.mem-stat span { display:block; color:#fff; font-weight:900; margin-top:8px; }
+.mem-stat small { color:#a1a1aa; }
+.mem-progress { display:flex; height:12px; border-radius:999px; overflow:hidden; background:#0e0e11; border:1px solid #27272a; margin:14px 0; }
+.mem-progress span { display:block; transition:width .35s ease; }
+.mem-prog-working { background:#10b981; }
+.mem-prog-short { background:#f59e0b; }
+.mem-prog-long { background:#3b82f6; }
+.mem-accordion { border:1px solid #27272a; border-radius:8px; background:#101114; margin:8px 0; padding:0; }
+.mem-accordion summary { cursor:pointer; padding:12px; font-weight:900; display:flex; justify-content:space-between; gap:12px; }
+.mem-accordion summary span { color:#a1a1aa; font-size:11px; }
+pre { white-space:pre-wrap; color:#d4d4d8; margin:0; padding:12px; border-top:1px solid #27272a; font-size:12px; line-height:1.45; }
+.dev-layout { display:grid; grid-template-columns:minmax(0,1.35fr) minmax(280px,.65fr); gap:14px; }
+.custom-engine-row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px; border:1px solid #27272a; border-radius:8px; background:#101114; margin-bottom:8px; }
+.custom-engine-row div { display:flex; flex-direction:column; gap:3px; }
+.custom-engine-row span { color:#a1a1aa; font-size:12px; }
+.meg-inline-image { margin-top:10px; border:1px solid #27272a; background:#111; border-radius:8px; overflow:hidden; max-width:420px; }
 .meg-inline-image img { display:block; width:100%; height:auto; }
 .meg-inline-image div { padding:10px; display:flex; flex-direction:column; gap:4px; }
 .meg-inline-image span { color:#a1a1aa; font-size:12px; }
-@media (max-width:760px) {
-  .meg-shell { grid-template-columns:1fr; }
-  .meg-dock { flex-direction:row; overflow:auto; border-right:0; border-bottom:1px solid #2a2c32; padding:8px; }
-  .meg-dock-btn { min-width:56px; }
-  .meg-hero { min-height:142px; align-items:start; flex-direction:column; padding:20px; }
-  .meg-hero h1 { font-size:32px; }
-  .meg-content { padding:16px; }
+@media (max-width:900px) {
+  .ps-modern-modal.app-container { width:100vw; height:100dvh; border-radius:0; border:0; }
+  .dock { left:0; right:0; top:auto; bottom:0; width:100%; height:66px; flex-direction:row; padding:8px; border-radius:12px 12px 0 0; overflow:auto; }
+  .dock:hover { width:100%; }
+  .dock-icon { width:52px; min-width:52px; height:48px; margin:0; justify-content:center; padding:0; }
+  .dock-icon span { display:none; }
+  .hero-banner { height:190px; }
+  .hero-content { padding:0 18px 22px 18px; }
+  .hero-content .name { font-size:34px; }
+  .top-app-bar { padding:12px; }
+  .app-actions .ps-modern-btn span, .app-actions .ps-modern-btn:not(.primary) { font-size:0; gap:0; padding:9px; }
+  .app-actions .ps-modern-btn .meg-svg { margin:0; }
+  .main-content { padding:16px 14px 86px; }
+  .mtab-header { align-items:flex-start; flex-direction:column; }
+  .image-lab, .dev-layout { grid-template-columns:1fr; }
+  .memory-dashboard { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .mtab-setting-row { align-items:stretch; flex-direction:column; }
+  .inline-form { grid-template-columns:1fr; }
+}
+@media (max-width:560px) {
+  .mtab-card-grid, .mtab-card-grid.compact, .npc-grid, .setting-grid, .resolution-grid, .memory-dashboard { grid-template-columns:1fr; }
 }`;
 }

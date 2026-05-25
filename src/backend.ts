@@ -7,6 +7,33 @@ import { patchComfyWorkflow } from "./image-workflow";
 declare const spindle: any;
 
 const CUSTOM_ENGINES_PATH = "custom-engines.json";
+const HERO_ASSETS = ["img/default.png", "img/default1.png", "img/default2.png", "img/default3.png", "img/group.png"];
+const SYNCABLE_PROFILE_KEYS = new Set([
+  "mode",
+  "personality",
+  "toggles",
+  "activeStyleId",
+  "aiRule",
+  "customStyles",
+  "dnRatio",
+  "userWordCount",
+  "userLanguage",
+  "userPronouns",
+  "disableUtilityPrefill",
+  "onomatopoeia",
+  "addons",
+  "blocks",
+  "model",
+  "thinkEffort",
+  "customThinkEffort",
+  "thinkingV2",
+  "storyPlan",
+  "banList",
+  "banListBackend",
+  "imageGen",
+  "npcBank",
+  "memoryCore"
+]);
 let utilityBypassDepth = 0;
 
 async function readJson<T>(path: string, fallback: T): Promise<T> {
@@ -44,6 +71,68 @@ async function saveProfile(scope: string, profile: MeguminProfile): Promise<Megu
   const merged = mergeProfile(profile);
   await writeJson(profilePath(scope), merged);
   return merged;
+}
+
+function mimeForPath(path: string): string {
+  if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg";
+  if (path.endsWith(".webp")) return "image/webp";
+  if (path.endsWith(".gif")) return "image/gif";
+  if (path.endsWith(".svg")) return "image/svg+xml";
+  return "image/png";
+}
+
+function stableIndex(input: string, length: number): number {
+  if (length <= 1) return 0;
+  let hash = 0;
+  for (const char of input) hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
+  return Math.abs(hash) % length;
+}
+
+async function readAssetDataUrl(path: string): Promise<string | null> {
+  try {
+    const bytes = await spindle.storage.readBinary(path);
+    const base64 = Buffer.from(bytes).toString("base64");
+    return `data:${mimeForPath(path)};base64,${base64}`;
+  } catch {
+    return null;
+  }
+}
+
+async function loadUiAssets(context: ChatContext): Promise<{ heroImages: string[]; mascotImage?: string }> {
+  const ordered = [...HERO_ASSETS.slice(stableIndex(context.chatId || context.scope, HERO_ASSETS.length)), ...HERO_ASSETS.slice(0, stableIndex(context.chatId || context.scope, HERO_ASSETS.length))];
+  let hero: string | null = null;
+  for (const path of ordered) {
+    hero = await readAssetDataUrl(path);
+    if (hero) break;
+  }
+  const mascotImage = await readAssetDataUrl("img/Cat.png");
+  return { heroImages: hero ? [hero] : [], mascotImage: mascotImage || undefined };
+}
+
+async function syncProfileKeysFrom(scope: string, keys: string[]): Promise<number> {
+  const safeKeys = keys.filter((key) => SYNCABLE_PROFILE_KEYS.has(key));
+  if (safeKeys.length === 0) return 0;
+  const source = await loadProfile(scope);
+  let profileFiles: string[] = [];
+  try {
+    profileFiles = await spindle.storage.list("profiles/");
+  } catch {
+    profileFiles = [];
+  }
+  const targets = new Set<string>(["profiles/global.json", profilePath(scope)]);
+  for (const file of profileFiles) {
+    const path = String(file);
+    if (!path.endsWith(".json")) continue;
+    targets.add(path.startsWith("profiles/") ? path : `profiles/${path}`);
+  }
+  for (const path of targets) {
+    const current = mergeProfile(await readJson(path, DEFAULT_PROFILE));
+    for (const key of safeKeys) {
+      (current as unknown as Record<string, unknown>)[key] = clone((source as unknown as Record<string, unknown>)[key]);
+    }
+    await writeJson(path, current);
+  }
+  return targets.size;
 }
 
 function chatToScope(chatId: string | null): string {
@@ -323,12 +412,18 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
         logic: getLogic(),
         engines: allEngines(await getCustomEngines()),
         customEngines: await getCustomEngines(),
-        imageConnections
+        imageConnections,
+        uiAssets: await loadUiAssets(context)
       };
     }
     case "profile:save": {
       const profile = mergeProfile((payload.payload as any)?.profile);
       return { profile: await saveProfile(context.scope, profile), context };
+    }
+    case "profile:syncTab": {
+      const keys = Array.isArray((payload.payload as any)?.keys) ? (payload.payload as any).keys.map(String) : [];
+      const syncedTargets = await syncProfileKeysFrom(context.scope, keys);
+      return { profile: await loadProfile(context.scope), context, syncedTargets };
     }
     case "profile:reset":
       await saveProfile(context.scope, DEFAULT_PROFILE);

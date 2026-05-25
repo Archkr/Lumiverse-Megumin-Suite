@@ -7,8 +7,8 @@ This port does not use the original SillyTavern preset installer or placeholder 
 ## Extension Shape
 
 - `spindle.json` declares the `megumin_suite` extension and required permissions.
-- `src/backend.ts` owns prompt interception, storage, quiet utility generations, memory pruning, NPC parsing, and image generation orchestration.
-- `src/frontend.ts` owns the floating widget and full-window app overlay.
+- `src/backend.ts` owns prompt interception, storage, quiet utility generations, UI asset delivery, memory pruning, NPC parsing, and image generation orchestration.
+- `src/frontend.ts` owns the magic-wand floating widget and full-window app overlay.
 - `src/prompt-engine.ts` assembles complete Megumin prompt blocks directly for Lumiverse generations.
 - `src/megumin-data.js` preserves the original Megumin prompt database for the Lumiverse prompt engine.
 - `dist/` contains the built backend and frontend entry files.
@@ -24,8 +24,9 @@ bun run check
 
 ## Runtime Behavior
 
-- The float widget is always available through Lumiverse UI panels.
+- The magic-wand float widget is always available through Lumiverse UI panels.
 - Clicking the widget opens a full-window app overlay with the Megumin tabs.
+- The overlay restores the original Megumin-style glass dock, hero image banner, action bar, section headers, filter pills, cards, toggles, dashboards, and image/NPC/memory panels.
 - Settings are stored in Spindle storage under profile, memory, NPC, image, engine, story, and ban-list namespaces.
 - The backend interceptor injects Megumin system blocks directly into Lumiverse generations.
 - Memory Core prunes archived chat turns from the prompt payload while reinjecting relevant summaries.
