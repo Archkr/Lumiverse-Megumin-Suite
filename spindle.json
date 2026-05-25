@@ -1,10 +1,10 @@
 {
-  "version": "7.0.0-lumiverse.1",
+  "version": "7.0.0",
   "name": "Megumin Suite",
   "identifier": "megumin_suite",
-  "author": "KazumaONIISAN, Lumiverse port by Steve",
-  "github": "https://github.com/Arif-salah/Megumin-Suite",
-  "homepage": "https://github.com/Arif-salah/Megumin-Suite",
+  "author": "Archkr",
+  "github": "https://github.com/Archkr/Lumiverse-Megumin-Suite",
+  "homepage": "https://github.com/Archkr/Lumiverse-Megumin-Suite",
   "description": "Megumin Suite ported to Lumiverse: narrative engines, memory, NPC tracking, ban lists, story planning, and image generation.",
   "permissions": [
     "interceptor",
