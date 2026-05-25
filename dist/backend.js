@@ -3374,7 +3374,7 @@ function patchComfyWorkflow(connection, profile, prompt) {
 
 // src/backend.ts
 var CUSTOM_ENGINES_PATH = "custom-engines.json";
-var HERO_ASSETS = ["img/default.png", "img/default1.png", "img/default2.png", "img/default3.png", "img/group.png"];
+var DEFAULT_HERO_ASSETS = ["img/default.png", "img/default1.png", "img/default2.png", "img/default3.png"];
 var SYNCABLE_PROFILE_KEYS = new Set([
   "mode",
   "personality",
@@ -3461,15 +3461,17 @@ async function readAssetDataUrl(path) {
   }
 }
 async function loadUiAssets(context) {
-  const ordered = [...HERO_ASSETS.slice(stableIndex(context.chatId || context.scope, HERO_ASSETS.length)), ...HERO_ASSETS.slice(0, stableIndex(context.chatId || context.scope, HERO_ASSETS.length))];
-  let hero = null;
+  const start = stableIndex(context.chatId || context.scope, DEFAULT_HERO_ASSETS.length);
+  const ordered = [...DEFAULT_HERO_ASSETS.slice(start), ...DEFAULT_HERO_ASSETS.slice(0, start)];
+  const heroImages = [];
   for (const path of ordered) {
-    hero = await readAssetDataUrl(path);
-    if (hero)
-      break;
+    const data = await readAssetDataUrl(path);
+    if (data)
+      heroImages.push(data);
   }
+  const groupImage = await readAssetDataUrl("img/group.png");
   const mascotImage = await readAssetDataUrl("img/Cat.png");
-  return { heroImages: hero ? [hero] : [], mascotImage: mascotImage || undefined };
+  return { heroImages, groupImage: groupImage || undefined, mascotImage: mascotImage || undefined };
 }
 async function syncProfileKeysFrom(scope, keys) {
   const safeKeys = keys.filter((key) => SYNCABLE_PROFILE_KEYS.has(key));
@@ -3506,16 +3508,28 @@ async function getActiveContext(userId) {
     const active = await spindle.chats.getActive(userId);
     const chatId = active?.id || null;
     const characterId = active?.character_id || active?.characterId || null;
+    const isGroup = !!(active?.is_group || active?.isGroup || active?.group_id || active?.groupId || Array.isArray(active?.character_ids) || Array.isArray(active?.characterIds));
     let characterName = "the character";
+    let characterAvatarUrl = null;
     if (characterId) {
       try {
         const character = await spindle.characters.get(characterId, userId);
         characterName = character?.name || characterName;
+        characterAvatarUrl = character ? `/api/v1/characters/${encodeURIComponent(characterId)}/avatar?size=lg` : null;
       } catch {}
     }
-    return { chatId, characterId, characterName, scope: chatToScope(chatId) };
+    return {
+      chatId,
+      chatName: active?.name || null,
+      characterId,
+      characterName,
+      characterAvatarUrl,
+      isGroup,
+      groupName: isGroup ? active?.name || "Group Chat" : null,
+      scope: chatToScope(chatId)
+    };
   } catch {
-    return { chatId: null, characterId: null, characterName: "the character", scope: "global" };
+    return { chatId: null, chatName: null, characterId: null, characterName: "the character", characterAvatarUrl: null, isGroup: false, groupName: null, scope: "global" };
   }
 }
 async function getChatContext(chatId, userId) {
@@ -3524,16 +3538,28 @@ async function getChatContext(chatId, userId) {
   try {
     const chat = await spindle.chats.get(chatId, userId);
     const characterId = chat?.character_id || chat?.characterId || null;
+    const isGroup = !!(chat?.is_group || chat?.isGroup || chat?.group_id || chat?.groupId || Array.isArray(chat?.character_ids) || Array.isArray(chat?.characterIds));
     let characterName = "the character";
+    let characterAvatarUrl = null;
     if (characterId) {
       try {
         const character = await spindle.characters.get(characterId, userId);
         characterName = character?.name || characterName;
+        characterAvatarUrl = character ? `/api/v1/characters/${encodeURIComponent(characterId)}/avatar?size=lg` : null;
       } catch {}
     }
-    return { chatId, characterId, characterName, scope: chatToScope(chatId) };
+    return {
+      chatId,
+      chatName: chat?.name || null,
+      characterId,
+      characterName,
+      characterAvatarUrl,
+      isGroup,
+      groupName: isGroup ? chat?.name || "Group Chat" : null,
+      scope: chatToScope(chatId)
+    };
   } catch {
-    return { chatId, characterId: null, characterName: "the character", scope: chatToScope(chatId) };
+    return { chatId, chatName: null, characterId: null, characterName: "the character", characterAvatarUrl: null, isGroup: false, groupName: null, scope: chatToScope(chatId) };
   }
 }
 async function getMessages(chatId) {

@@ -22,8 +22,12 @@ export interface ChatMessage {
 
 export interface ChatContext {
   chatId: string | null;
+  chatName?: string | null;
   characterId: string | null;
   characterName: string;
+  characterAvatarUrl?: string | null;
+  isGroup?: boolean;
+  groupName?: string | null;
   scope: string;
 }
 
@@ -142,7 +146,7 @@ export interface MeguminProfile {
   userPronouns: "off" | "male" | "female";
   banList: string[];
   banListBackend: "direct";
-  thinkEffort: "unspecified" | "50" | "100" | "200" | "custom";
+  thinkEffort: "unspecified" | "100" | "250" | "450" | "custom";
   customThinkEffort: string;
   thinkingV2: boolean;
   storyPlan: StoryPlanSettings;

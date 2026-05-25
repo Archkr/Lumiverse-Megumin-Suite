@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { clone } from "./defaults";
 import { buildPromptMessages } from "./prompt-engine";
 import { extractNpcBlocks, relevantChunks } from "./text";
@@ -6,12 +7,48 @@ import { patchComfyWorkflow } from "./image-workflow";
 import { DEFAULT_PROFILE } from "./defaults";
 import type { ChatContext, ChatMessage, LlmMessage, MemoryChunk } from "./types";
 
+const frontendSource = readFileSync(new URL("./frontend.ts", import.meta.url), "utf8");
+
 const context: ChatContext = {
   chatId: "chat_test",
+  chatName: "Test Chat",
   characterId: "char_test",
   characterName: "Yunyun",
+  characterAvatarUrl: "/api/v1/characters/char_test/avatar?size=lg",
+  isGroup: false,
   scope: "chat_chat_test"
 };
+
+describe("Megumin UI parity audit", () => {
+  test("keeps ST tab copy and removes Lumiverse/preset-only UI wording", () => {
+    const requiredLabels = [
+      "Choose the core ruleset that drives all NPC behavior and world logic.",
+      "Define the personality and extra toggles.",
+      "Set response length, output language, and how the AI addresses you.",
+      "Attach extra modules that appear at the end of every response.",
+      "Control the AI's internal reasoning process before it writes.",
+      "Wire up ComfyUI to auto-generate scene images during roleplay.",
+      "Advanced 3-Tier Context & History Management.",
+      "V7 Modules (Turn off to disable)",
+      "Dialogue / Narration Ratio",
+      "ComfyUI Server & Workflow",
+      "Send Portraits to AI",
+      "Context Allocation Dashboard"
+    ];
+    for (const label of requiredLabels) expect(frontendSource).toContain(label);
+
+    const forbiddenLabels = [
+      "Use Lumiverse image connections",
+      "tracker is injected",
+      "Scan Last Message",
+      "Lumiverse quiet generation",
+      "Megumin Engine Preset",
+      "Megumin Image Preset",
+      "Preset-specific Main 3"
+    ];
+    for (const label of forbiddenLabels) expect(frontendSource).not.toContain(label);
+  });
+});
 
 describe("Megumin prompt assembly", () => {
   test("injects Megumin blocks and prunes archived prompt turns", () => {

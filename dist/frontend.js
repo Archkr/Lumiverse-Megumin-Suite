@@ -175,20 +175,35 @@ var state = {
   uiAssets: { heroImages: [] },
   status: "Loading..."
 };
+var MEGUMIN_PARITY_LABELS = {
+  tabs: [
+    ["Core Engine", "Choose the core ruleset that drives all NPC behavior and world logic."],
+    ["Persona & Toggles", "Define the personality and extra toggles."],
+    ["Writing Style", "Apply a prebuilt style, generate one with AI, or build your own."],
+    ["Global Settings", "Set response length, output language, and how the AI addresses you."],
+    ["Add-ons & Blocks", "Attach extra modules that appear at the end of every response."],
+    ["Chain of Thought", "Control the AI's internal reasoning process before it writes."],
+    ["Story Planner", "Generate and track future plot developments."],
+    ["Dynamic Ban List", "Scan and ban repetitive AI phrases."],
+    ["Image Generation", "Wire up ComfyUI to auto-generate scene images during roleplay."],
+    ["NPCs Bank", "Automatically extract and track significant NPCs in the story."],
+    ["Memory Core", "Advanced 3-Tier Context & History Management."]
+  ]
+};
 var tabs = [
-  { title: "Core Engine", sub: "Choose the core ruleset that drives NPC behavior and world logic.", short: "Engine", icon: "server", color: "#f59e0b", render: renderEngines },
-  { title: "Persona & Toggles", sub: "Set the narrator voice and fine-tune engine behavior.", short: "Persona", icon: "masks", color: "#ec4899", render: renderPersona },
-  { title: "Writing Style", sub: "Apply a prebuilt style, generate one with AI, or build your own.", short: "Style", icon: "pen", color: "#a855f7", render: renderStyle },
-  { title: "Global Settings", sub: "Set response length, output language, pronouns, and utility behavior.", short: "Global", icon: "globe", color: "#3b82f6", render: renderGlobalSettings },
-  { title: "Add-ons & Blocks", sub: "Attach extra gameplay modules and response panels.", short: "Blocks", icon: "puzzle", color: "#10b981", render: renderBlocks },
-  { title: "Chain of Thought", sub: "Configure the reasoning framework and thinking depth.", short: "Thinking", icon: "brain", color: "#8b5cf6", render: renderThinking },
-  { title: "Story Planner", sub: "Brainstorm and track plot milestones automatically.", short: "Story", icon: "map", color: "#f59e0b", render: renderStory },
-  { title: "Dynamic Ban List", sub: "Detect and ban repetitive AI phrasing.", short: "Ban", icon: "ban", color: "#ef4444", render: renderBanList },
-  { title: "Image Generation", sub: "Use Lumiverse image connections for scene rendering.", short: "Image", icon: "image", color: "#06b6d4", render: renderImage },
-  { title: "NPCs Bank", sub: "Extract, store, recall, and portrait significant NPCs.", short: "NPCs", icon: "address", color: "#22c55e", render: renderNpc },
-  { title: "Memory Core", sub: "Advanced 3-tier context and history management.", short: "Memory", icon: "memory", color: "#38bdf8", render: renderMemory }
+  { title: "Core Engine", sub: "Choose the core ruleset that drives all NPC behavior and world logic.", short: "Engine", icon: "fa-server", color: "#f59e0b", render: renderEngines },
+  { title: "Persona & Toggles", sub: "Define the personality and extra toggles.", short: "Persona", icon: "fa-user-astronaut", color: "#ec4899", render: renderPersona },
+  { title: "Writing Style", sub: "Apply a prebuilt style, generate one with AI, or build your own.", short: "Style", icon: "fa-pen-nib", color: "#a855f7", render: renderStyle },
+  { title: "Global Settings", sub: "Set response length, output language, and how the AI addresses you.", short: "Global", icon: "fa-earth-americas", color: "#3b82f6", render: renderGlobalSettings },
+  { title: "Add-ons & Blocks", sub: "Attach extra modules that appear at the end of every response.", short: "Blocks", icon: "fa-puzzle-piece", color: "#10b981", render: renderBlocks },
+  { title: "Chain of Thought", sub: "Control the AI's internal reasoning process before it writes.", short: "Thinking", icon: "fa-brain", color: "#8b5cf6", render: renderThinking },
+  { title: "Story Planner", sub: "Generate and track future plot developments.", short: "Story", icon: "fa-map", color: "#f59e0b", render: renderStory },
+  { title: "Dynamic Ban List", sub: "Scan and ban repetitive AI phrases.", short: "Ban", icon: "fa-ban", color: "#ef4444", render: renderBanList },
+  { title: "Image Generation", sub: "Wire up ComfyUI to auto-generate scene images during roleplay.", short: "Image", icon: "fa-image", color: "#06b6d4", render: renderImage },
+  { title: "NPCs Bank", sub: "Automatically extract and track significant NPCs in the story.", short: "NPCs", icon: "fa-address-book", color: "#f43f5e", render: renderNpc },
+  { title: "Memory Core", sub: "Advanced 3-Tier Context & History Management.", short: "Memory", icon: "fa-memory", color: "#10b981", render: renderMemory }
 ];
-var devTab = { title: "Dev Engine Builder", sub: "Clone, edit, and save custom Megumin engine blocks.", short: "Dev", icon: "code", color: "#a855f7", render: renderDev };
+var devTab = { title: "Dev Engine Builder", sub: "Clone, edit, and save custom Megumin engine blocks.", short: "Dev", icon: "fa-code", color: "#a855f7", render: renderDev };
 function setup(ctx) {
   ctxRef = ctx;
   removeStyle = ctxRef.dom.addStyle(styles());
@@ -269,7 +284,8 @@ function render() {
   if (!appMount || !state.visible)
     return;
   const current = state.devMode ? devTab : tabs[state.activeTab] || tabs[0];
-  const heroImage = state.uiAssets.heroImages[(state.activeTab + (state.context?.chatId || "").length) % Math.max(1, state.uiAssets.heroImages.length)] || "";
+  const heroImage = heroImageUrl();
+  const status = heroStatus();
   root().innerHTML = `
     <div class="meg-overlay">
       <div class="ps-modern-modal app-container">
@@ -281,16 +297,16 @@ function render() {
             <div class="hero-overlay"></div>
             <div class="top-app-bar">
               <div class="app-actions">
-                <div class="live-token-count" title="Estimated Payload Tokens">${icon("microchip")} ~${estimatePayloadTokens()}</div>
-                <button type="button" class="ps-modern-btn secondary gold" data-action="sync-tab">${icon("globe")} Sync Tab Globally</button>
-                <button type="button" class="ps-modern-btn secondary danger" data-action="reset">${icon("reset")} Reset</button>
-                <button type="button" class="ps-modern-btn secondary purple ${state.devMode ? "active" : ""}" data-action="open-dev">${icon("code")} Dev</button>
+                <div class="live-token-count" title="Estimated Payload Tokens">${icon("fa-microchip")} ~${estimatePayloadTokens()}</div>
+                <button type="button" class="ps-modern-btn secondary gold" data-action="sync-tab">${icon("fa-earth-americas")} Sync Tab Globally</button>
+                <button type="button" class="ps-modern-btn secondary danger" data-action="reset">${icon("fa-rotate-left")} Reset</button>
+                <button type="button" class="ps-modern-btn secondary purple ${state.devMode ? "active" : ""}" data-action="open-dev">${icon("fa-code")} Dev</button>
                 <span class="ps-save-indicator ${state.saving ? "saving" : ""}">${escapeHtml(state.status)}</span>
-                <button type="button" class="ps-modern-btn primary" data-action="close">${icon("save")} Save & Close</button>
+                <button type="button" class="ps-modern-btn primary" data-action="close">${icon("fa-save")} Save & Close</button>
               </div>
             </div>
             <div class="hero-content">
-              <div class="status" id="ps_rule_status_main">${escapeHtml(heroStatus())}</div>
+              <div class="status" id="ps_rule_status_main" style="color:${status.color};text-shadow:${status.shadow};">${escapeHtml(status.text)}</div>
               <h2 class="name" id="ps_char_rule_label">${escapeHtml(heroName())}</h2>
               <p>${escapeHtml(current.sub)}</p>
             </div>
@@ -309,14 +325,29 @@ function dockButton(tab, index) {
     ${icon(tab.icon)}<span>${escapeHtml(tab.title)}</span>
   </button>`;
 }
-function scopeLabel() {
-  return state.context?.chatId ? `Chat Profile: ${state.context.chatId}` : "Global Default";
+function heroImageUrl() {
+  if (state.context?.isGroup && state.uiAssets.groupImage)
+    return state.uiAssets.groupImage;
+  if (state.context?.characterAvatarUrl)
+    return state.context.characterAvatarUrl;
+  const heroes = state.uiAssets.heroImages || [];
+  return heroes[(state.activeTab + (state.context?.chatId || "").length) % Math.max(1, heroes.length)] || "";
 }
 function heroStatus() {
-  return state.context?.characterName && state.context.characterName !== "the character" ? "Custom Character Profile" : scopeLabel();
+  if (state.context?.isGroup)
+    return { text: "Custom Group Profile", color: "#3b82f6", shadow: "0 0 10px rgba(59,130,246,0.5)" };
+  if (state.context?.characterId)
+    return { text: "Custom Character Profile", color: "#10b981", shadow: "0 0 10px rgba(16,185,129,0.5)" };
+  if (state.context?.chatId)
+    return { text: "Using System Default", color: "#f59e0b", shadow: "0 0 10px rgba(245,158,11,0.5)" };
+  return { text: "Modifying Global Default", color: "#a855f7", shadow: "0 0 10px rgba(168,85,247,0.5)" };
 }
 function heroName() {
-  return state.context?.characterName && state.context.characterName !== "the character" ? state.context.characterName : "Megumin Suite";
+  if (state.context?.isGroup)
+    return state.context.groupName || state.context.chatName || "Group Chat";
+  if (state.context?.characterId && state.context.characterName !== "the character")
+    return state.context.characterName;
+  return state.context?.chatName || "Global Default";
 }
 function wire(container) {
   container.querySelectorAll("[data-tab]").forEach((button) => {
@@ -423,7 +454,7 @@ async function handleAction(el) {
       return;
     }
     if (action === "style-direct") {
-      const style = (state.logic?.directStyles || []).find((item) => item.id === el.dataset.value);
+      const style = [...state.logic?.directStyles || [], ...state.profile.customStyles || []].find((item) => item.id === el.dataset.value);
       if (style) {
         state.profile.activeStyleId = style.id;
         state.profile.aiRule = style.rule || "";
@@ -440,6 +471,19 @@ async function handleAction(el) {
         saveProfileSoon();
         render();
       }
+      return;
+    }
+    if (action === "style-save-custom") {
+      const name = (root().querySelector("#style-name")?.value || "Custom AI Style").trim();
+      const rule = state.profile.aiRule.trim();
+      if (!rule)
+        throw new Error("Write or generate a rule before saving");
+      const id = `custom_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || Date.now()}`;
+      const existing = (state.profile.customStyles || []).filter((style) => style.id !== id);
+      state.profile.customStyles = [...existing, { id, name, rule, notes: "" }];
+      state.profile.activeStyleId = id;
+      saveProfileSoon();
+      render();
       return;
     }
     if (action === "toggle") {
@@ -495,8 +539,23 @@ async function handleAction(el) {
       const prompt = root().querySelector("#meg-manual-image-prompt")?.value || "";
       return runTask("Generating image...", "image:manual", { prompt });
     }
+    if (action === "image-test")
+      return runTask("Testing ComfyUI connection...", "image:connections");
+    if (action === "image-workflow-noop") {
+      state.status = "Workflow settings are saved";
+      render();
+      return;
+    }
     if (action === "npc-portrait")
       return runTask("Generating portrait...", "npc:portrait", { name: el.dataset.name });
+    if (action === "npc-clear") {
+      if (!state.profile.npcBank.npcs.length || !confirm("Clear all saved NPCs?"))
+        return;
+      state.profile.npcBank.npcs = [];
+      saveProfileSoon();
+      render();
+      return;
+    }
     if (action === "ban-remove") {
       state.profile.banList = state.profile.banList.filter((item) => item !== el.dataset.value);
       saveProfileSoon();
@@ -525,6 +584,35 @@ async function handleAction(el) {
       state.profile.npcBank.npcs = state.profile.npcBank.npcs.filter((item) => item.name !== el.dataset.name);
       saveProfileSoon();
       render();
+      return;
+    }
+    if (action === "memory-clear-short") {
+      state.profile.memoryCore.shortTermChunks = [];
+      saveProfileSoon();
+      render();
+      return;
+    }
+    if (action === "memory-clear-vault") {
+      if (!state.profile.memoryCore.longTermVault.length || !confirm("Clear the Long-Term Vault?"))
+        return;
+      state.profile.memoryCore.longTermVault = [];
+      saveProfileSoon();
+      render();
+      return;
+    }
+    if (action === "memory-test-vector") {
+      state.status = "Scanner ready";
+      render();
+      return;
+    }
+    if (action === "ban-export") {
+      const blob = new Blob([JSON.stringify(state.profile.banList, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "megumin-ban-list.json";
+      anchor.click();
+      URL.revokeObjectURL(url);
       return;
     }
     if (action === "dev-save")
@@ -574,45 +662,47 @@ async function deleteDevEngine(id) {
 }
 function renderEngines() {
   const descriptions = {
-    balance: "The original Secret Sauce. NPCs react naturally - no simping, no needless hostility.",
-    "balance Test": "Newer balance mode with lower token weight and more creativity.",
-    cinematic: "Hollywood-inspired storytelling with dramatic beats and heightened tension.",
-    dark: "Balance, but harsher. The world is unforgiving and consequences hit harder.",
-    "v6-anime-director": "Advanced cinematic framing and pacing for high-budget anime direction.",
-    "v6-dream-team": "A six-specialist writer room for narrative consistency and realism.",
-    "v6-dream-team-lite": "A streamlined Dream Team variant with lower token overhead.",
-    "v7-core": "Grounded, cinematic, patient, and built for relentless world progression.",
-    "v7-reality": "Unrelenting simulation with no narrative protection.",
-    "v7-gentle": "A softer, quieter engine with more atmospheric pacing."
+    balance: "The original Secret Sauce. NPCs react naturally &mdash; no simping, no needless hostility.",
+    "balance Test": "New and improved balance mode that aims to use less tokens and more creativity.",
+    cinematic: "Hollywood-inspired storytelling. Dramatic beats and heightened tension.",
+    dark: "Balance but harsher. The world is unforgiving and consequences hit harder.",
+    "v6-anime-director": "Advanced cinematic framing and pacing. Designed to emulate high-budget anime direction.",
+    "v6-dream-team": "The ultimate 6-specialist writer room. Unprecedented narrative consistency and realism.",
+    "v6-dream-team-lite": "A streamlined version of the Dream Team. Faster generation with lower token overhead.",
+    "v7-core": "The V7 Core engine. The perfect middle ground: cinematic pacing, realistic friction, and relentless world progression.",
+    "v7-reality": "The V7 Reality engine. Grounded, unrelenting simulation with zero narrative protection.",
+    "v7-gentle": "The V7 Gentle engine. A softer, For pussies."
   };
   const active = state.engines.find((engine) => engine.id === state.profile.mode);
   const visible = state.engines.filter((engine) => engineMatchesFilter(engine, state.engineFilter));
+  const isV7 = state.profile.mode.startsWith("v7");
   return `
-    ${tabHeader("Core Engines", "Choose the narrative engine that drives your AI's behavior.", "microchip", "#f59e0b", active?.label || state.profile.mode, "#10b981")}
+    ${tabHeader("Core Engines", "Choose the narrative engine that drives your AI's behavior.", "fa-microchip", "#f59e0b", active?.label || state.profile.mode, "#10b981", "fa-circle-check")}
     <div class="wstyle-filters">
-      ${["all", "V4", "V5", "V6", "V7", "Custom"].map((filter) => filterPill(filter, state.engineFilter === filter, engineCount(filter))).join("")}
+      ${["all", "V4", "V5", "V6", "V7"].map((filter) => filterPill(filter, state.engineFilter === filter, engineCount(filter))).join("")}
     </div>
     <div class="mtab-card-grid">
       ${visible.map((engine) => engineCard(engine, descriptions[engine.id] || `${engine.label || engine.id} engine flow.`)).join("")}
     </div>
-    ${state.engineFilter === "V6" && !visible.length ? lockedState("hammer", "V6 Engines are in the forge.", "Stay tuned for the next update.") : ""}
-    ${state.customEngines.length ? `<div class="wstyle-section-head green">${icon("code")} Custom Engines</div><div class="mtab-card-grid">${state.customEngines.map((engine) => engineCard(engine, "Custom user logic flow.")).join("")}</div>` : ""}
-    <div class="wstyle-section-head blue">${icon("layers")} V7 Modules</div>
+    ${state.engineFilter === "V6" && !visible.length ? lockedState("fa-hammer", "V6 Engines are in the forge.", "Stay tuned for the next update! Later this week.") : ""}
+    ${isV7 ? `<div class="wstyle-section-head blue">${icon("fa-layer-group")} V7 Modules (Turn off to disable)</div>
     <div class="mtab-card-list">
-      ${toggleGeneric("OOC Protocol", "toggles.v7_ooc", state.profile.toggles.v7_ooc, "Keep the V7 out-of-character directive active.")}
-      ${toggleGeneric("PC Solo Physicality", "toggles.v7_pcsolo", state.profile.toggles.v7_pcsolo, "Allow observable body language when the user character is alone.")}
-      ${toggleGeneric("Cultural Anchoring", "toggles.v7_culture", state.profile.toggles.v7_culture, "Use era-specific culture and real-world specificity in suitable scenes.")}
-      ${toggleGeneric("Scene Choreography", "toggles.v7_scene", state.profile.toggles.v7_scene, "Keep crowd management and camera-focus rules active.")}
-      ${toggleGeneric("Introduction Protocol", "toggles.v7_intro", state.profile.toggles.v7_intro, "Preserve V7 opening-scene behavior.")}
-    </div>`;
+      ${toggleGeneric("OOC Protocol", "toggles.v7_ooc", state.profile.toggles.v7_ooc, "Allows out-of-character directives.")}
+      ${toggleGeneric("PC Solo Physicality", "toggles.v7_pcsolo", state.profile.toggles.v7_pcsolo, "Narration of PC when unobserved.")}
+      ${toggleGeneric("Introduction Protocol", "toggles.v7_intro", state.profile.toggles.v7_intro, "How new NPCs enter the story.")}
+      ${toggleGeneric("Cultural Anchoring", "toggles.v7_culture", state.profile.toggles.v7_culture, "Real-world integration and references.")}
+      ${toggleGeneric("Scene Choreography", "toggles.v7_scene", state.profile.toggles.v7_scene, "Focus shifting and crowd management.")}
+    </div>` : ""}
+    ${state.customEngines.length ? `<div class="wstyle-section-head green">${icon("fa-puzzle-piece")} Custom User Engines</div><div class="mtab-card-grid">${state.customEngines.map((engine) => engineCard(engine, "Custom Engine Flow")).join("")}</div>` : ""}`;
 }
 function renderPersona() {
   const personalities = state.logic?.personalities || [];
   const locked = state.profile.mode.startsWith("v7") || state.profile.mode.includes("v6-dream-team");
+  const lockedText = state.profile.mode.startsWith("v7") ? "The V7 engine utilizes a pure narrative framework. Standard persona injections are disabled to prevent logic conflicts." : "The V6 Dream Team engine utilizes an intrinsic 6-specialist framework. Standard persona injections are disabled to prevent logic conflicts.";
   return `
-    ${tabHeader("Persona & Toggles", "Set narrator voice and extra behavioral switches.", "masks", "#ec4899", locked ? "Locked" : state.profile.personality, "#ec4899")}
-    ${locked ? lockedState("lock", "Persona Selection Locked", "This engine uses its own narrative framework. Standard persona overlays are disabled to avoid logic conflicts.") : `
-      <div class="wstyle-section-head purple">${icon("masks")} Select Persona</div>
+    ${tabHeader("Persona & Toggles", "Set the narrator's voice and fine-tune engine behavior.", "fa-masks-theater", "#ec4899", locked ? "Locked" : state.profile.personality, "#ec4899", "fa-user")}
+    ${locked ? lockedState("fa-user-lock", "Persona Selection Locked", lockedText) : `
+      <div class="wstyle-section-head purple">${icon("fa-masks-theater")} Select Persona</div>
       <div class="mtab-card-grid">
         ${personalities.map((item) => infoCard({
     title: item.label,
@@ -624,263 +714,294 @@ function renderPersona() {
     badge: item.recommended ? "Recommended" : ""
   })).join("")}
       </div>`}
-    <div class="wstyle-section-head gold">${icon("sliders")} Extra Toggles</div>
+    <div class="wstyle-section-head gold">${icon("fa-sliders")} Extra Toggles</div>
     <div class="mtab-card-list">
-      ${Object.entries(state.logic?.toggles || {}).map(([key, toggle]) => toggleGeneric(toggle.label, `toggles.${key}`, !!state.profile.toggles[key], toggle.recommendedOff ? "Off by default - most engines handle this natively." : strip(toggle.content).slice(0, 140))).join("")}
+      ${Object.entries(state.logic?.toggles || {}).map(([key, toggle]) => toggleGeneric(toggle.label, `toggles.${key}`, !!state.profile.toggles[key], toggle.recommendedOff ? "Off by default - most engines handle this natively" : "")).join("")}
     </div>`;
 }
 function renderStyle() {
   const directStyles = state.logic?.directStyles || [];
   const templates = state.logic?.styleTemplates || [];
-  const activeName = state.profile.activeStyleId ? directStyles.find((item) => item.id === state.profile.activeStyleId)?.name || "Custom" : state.profile.aiRule ? "Custom Rule" : "Off";
+  const filter = ["all", "precooked", "custom", "generators"].includes(state.styleFilter) ? state.styleFilter : "all";
+  const isV7 = state.profile.mode.startsWith("v7");
+  const isOff = !state.profile.activeStyleId && !state.profile.aiRule;
+  const customStyles = state.profile.customStyles || [];
+  const existingNames = customStyles.map((style) => style.name);
+  const genTemplates = templates.filter((template) => !existingNames.includes(template.name));
+  const activeName = state.profile.activeStyleId ? directStyles.find((item) => item.id === state.profile.activeStyleId)?.name || "Custom" : state.profile.aiRule ? "Custom Rule" : "No Style Active";
   return `
-    ${tabHeader("Writing Style", "Apply direct styles, generate from templates, or write your own rule.", "pen", "#a855f7", activeName, "#a855f7")}
-    <div class="wstyle-filters">
-      ${stylePill("direct", "Direct Styles", directStyles.length)}
-      ${stylePill("templates", "Style Templates", templates.length)}
-      ${stylePill("editor", "Rule Editor", state.profile.aiRule ? 1 : 0)}
+    <div class="wstyle-header">
+      <div class="wstyle-header-left">
+        <div class="wstyle-header-icon">${icon("fa-pen-nib")}</div>
+        <div><h2>Writing Style</h2><p>Apply a prebuilt style, generate one with AI, or craft your own.</p></div>
+      </div>
+      <div class="wstyle-active-badge ${isOff ? "off" : ""}">${icon(isOff ? "fa-power-off" : "fa-circle-check")} ${escapeHtml(activeName)}</div>
     </div>
-    ${state.styleFilter === "direct" ? `
-      <div class="mtab-card-grid">
-        ${infoCard({ title: "Off", sub: "No additional style overlay.", active: !state.profile.activeStyleId && !state.profile.aiRule, action: "style-off", value: "off", badge: "Clean" })}
-        ${directStyles.map((style) => infoCard({ title: style.name, sub: style.desc || strip(style.rule).slice(0, 160), active: state.profile.activeStyleId === style.id, action: "style-direct", value: style.id, badge: state.profile.activeStyleId === style.id ? "Active" : "" })).join("")}
-      </div>` : ""}
-    ${state.styleFilter === "templates" ? `
-      <div class="mtab-card-grid">
-        ${templates.map((template, index) => infoCard({ title: template.name, sub: `${(template.tags || []).slice(0, 5).join(", ")} - ${template.notes || ""}`.slice(0, 220), active: false, action: "style-template", index, badge: "Generate Rule" })).join("")}
-      </div>` : ""}
-    ${state.styleFilter === "editor" ? `
-      <div class="mtab-panel">
-        <div class="mtab-panel-title purple">${icon("pen")} Custom Writing Rule</div>
-        <textarea class="ps-modern-input textarea-xl" data-bind="aiRule" placeholder="Custom style or authoring rule...">${escapeHtml(state.profile.aiRule)}</textarea>
-      </div>` : ""}
+    ${!isV7 ? `<button type="button" class="wstyle-off-card ${isOff ? "active" : ""}" data-action="style-off">
+      <span class="off-left"><span class="off-icon">${icon("fa-power-off")}</span><span><strong>No Style (Off)</strong><small>Let the engine decide &mdash; no extra style directives injected.</small></span></span>
+      ${isOff ? `<span class="card-status active-status">${icon("fa-check")} Active</span>` : ""}
+    </button>` : `<div class="wstyle-off-card locked-card"><span class="off-left"><span class="off-icon blue">${icon("fa-lock")}</span><span><strong>No Style (Off) - Locked</strong><small>V7 Engines require a narrative style directive. Defaulting to V7 Recommended.</small></span></span></div>`}
     <div class="wstyle-dnr-panel">
-      <div class="mtab-panel-title gold">${icon("sliders")} Dialogue / Narration Ratio</div>
-      ${toggleGeneric("Enable Ratio Control", "dnRatio.enabled", state.profile.dnRatio.enabled, "Guide the balance between spoken dialogue and narration.")}
-      ${rangeField("Dialogue Percentage", "dnRatio.dialogue", state.profile.dnRatio.dialogue, 0, 100)}
+      <div class="wstyle-dnr-header">
+        <div class="dnr-info"><div class="dnr-icon">${icon("fa-scale-balanced")}</div><div><strong>Dialogue / Narration Ratio</strong><small>Fine-tune the balance between spoken dialogue and descriptive prose.</small></div></div>
+        <button type="button" class="ps-toggle-card ${state.profile.dnRatio.enabled ? "active" : ""}" data-action="toggle" data-path="dnRatio.enabled"><span class="ps-switch"></span></button>
+      </div>
+      <div class="wstyle-dnr-body ${state.profile.dnRatio.enabled ? "open" : ""}">
+        <div class="wstyle-dnr-slider-track"><span class="wstyle-dnr-label narr">${100 - state.profile.dnRatio.dialogue}% Narration</span><input type="range" min="0" max="100" step="10" data-bind="dnRatio.dialogue" value="${state.profile.dnRatio.dialogue}"><span class="wstyle-dnr-label dial">${state.profile.dnRatio.dialogue}% Dialogue</span></div>
+        <div class="dnr-preview">Preview - "Maintain a balance of ${state.profile.dnRatio.dialogue}% Dialogue and ${100 - state.profile.dnRatio.dialogue}% Narration."</div>
+      </div>
+    </div>
+    <div class="wstyle-filters">
+      ${stylePill("all", "All", directStyles.length + customStyles.length + genTemplates.length)}
+      ${stylePill("precooked", "Precooked", directStyles.length, "fa-fire-burner")}
+      ${stylePill("custom", "My Library", customStyles.length, "fa-book")}
+      ${stylePill("generators", "AI Generators", genTemplates.length, "fa-wand-magic-sparkles")}
+    </div>
+    ${filter === "all" || filter === "precooked" ? `<div class="style-section"><div class="wstyle-section-head gold">${icon("fa-fire-burner")} Precooked Styles</div><div class="wstyle-list">${directStyles.map((style) => styleCard(style.name, style.desc, style.rule, state.profile.activeStyleId === style.id, "style-direct", style.id)).join("")}</div></div>` : ""}
+    ${filter === "all" || filter === "custom" ? `<div class="style-section"><div class="wstyle-section-head green">${icon("fa-book")} My Library</div><div class="wstyle-list">${customStyles.map((style) => styleCard(style.name, style.notes || "Custom AI style.", style.rule, state.profile.activeStyleId === style.id, "style-direct", style.id)).join("")}<button type="button" class="wstyle-create-card" data-action="style-filter" data-value="custom">${icon("fa-plus")} Create Custom AI Style</button></div></div>` : ""}
+    ${filter === "all" || filter === "generators" ? `<div class="style-section"><div class="wstyle-section-head purple">${icon("fa-wand-magic-sparkles")} AI Style Generators</div><div class="mtab-card-grid">${genTemplates.map((template, index) => `<button type="button" class="wstyle-gen-card" data-action="style-template" data-index="${index}"><span class="gen-info"><span class="gen-title">${escapeHtml(template.name)}</span><span class="gen-desc">${escapeHtml((template.notes || (template.tags || []).join(", ")).slice(0, 180))}</span></span><span class="wstyle-gen-btn">${icon("fa-bolt")} Generate</span></button>`).join("")}</div></div>` : ""}
+    <div class="wstyle-section-head purple">${icon("fa-pen-nib")} Create Custom AI Style</div>
+    <div class="mtab-panel">
+      <div class="wstyle-editor-bar"><input id="style-name" class="ps-modern-input" placeholder="Name your style..."><button class="ps-modern-btn secondary" type="button" data-action="style-save-custom">${icon("fa-save")} Save</button><button class="ps-modern-btn secondary" type="button">${icon("fa-arrow-left")} Back</button></div>
+      <div class="panel-heading-row"><div class="mtab-panel-title purple">${icon("fa-scroll")} Generated Rule</div><button class="wstyle-gen-btn" type="button">${icon("fa-bolt")} Generate Writing Rule</button></div>
+      <textarea class="ps-modern-input textarea-xl" data-bind="aiRule" placeholder="Select tags above and click Generate...">${escapeHtml(state.profile.aiRule)}</textarea>
+      <div class="wstyle-info-callout">${icon("fa-circle-info")}<span>After generating or editing your rule, hit <strong>Save</strong> in the toolbar above to apply it to your library.</span></div>
     </div>`;
 }
 function renderGlobalSettings() {
+  const addons = state.logic?.addons || [];
   return `
-    ${tabHeader("Global Settings", "Language, response length, pronouns, utility behavior, and sound styling.", "globe", "#3b82f6", "Profile", "#3b82f6")}
+    ${tabHeader("Global Settings", "Toggle add-ons, set output preferences, and configure extras.", "fa-puzzle-piece", "#3b82f6", `${state.profile.addons.length} Active`, "#3b82f6", "fa-toggle-on")}
+    <div class="wstyle-section-head blue">${icon("fa-puzzle-piece")} Gameplay Add-ons</div>
+    <div class="mtab-card-grid">${addons.map((item) => moduleCard(item, state.profile.addons.includes(item.id), "addons")).join("")}</div>
     <div class="mtab-panel">
-      <div class="mtab-panel-title blue">${icon("globe")} Output Preferences</div>
-      <div class="mtab-setting-row">${settingText("Target Word Count", "Leave empty for no limit")}${inputField("", "userWordCount", state.profile.userWordCount, "e.g. 600", "number")}</div>
-      <div class="mtab-setting-row">${settingText("Language Output", "Leave empty for the chat default")}${inputField("", "userLanguage", state.profile.userLanguage, "English")}</div>
-      <div class="mtab-setting-row">${settingText("User Gender", "Pronoun hint for the assistant")}${selectField("", "userPronouns", state.profile.userPronouns, [["off", "Off"], ["male", "Male (He/Him)"], ["female", "Female (She/Her)"]])}</div>
-    </div>
-    <div class="mtab-panel">
-      <div class="mtab-panel-title gold">${icon("settings")} Utility Controls</div>
-      ${toggleGeneric("Prompt Payload Preview", "toggles.promptPreview", !!state.profile.toggles.promptPreview, "Show the constructed prompt before it is sent.")}
-      ${toggleGeneric("Disable Utility Prefills", "disableUtilityPrefill", state.profile.disableUtilityPrefill, "Use this if a provider rejects assistant prefills during utility generations.")}
-      ${toggleGeneric("Cinematic Sounds", "onomatopoeia.enabled", state.profile.onomatopoeia.enabled, "Use precise sound words where physically appropriate.")}
-      ${toggleGeneric("Animate Sounds", "onomatopoeia.useStyling", state.profile.onomatopoeia.useStyling, "Wrap sound words for capable renderers.")}
+      <div class="mtab-panel-title blue">${icon("fa-earth-americas")} Extra</div>
+      ${toggleGeneric(`${icon("fa-magnifying-glass")} Prompt Payload Preview`, "toggles.promptPreview", !!state.profile.toggles.promptPreview, "Show a popup of the final constructed prompt right before it is sent to the AI. only enable if you know what you doing it maybe buggy.", true)}
+      ${toggleGeneric("Disable Utility Prefills", "disableUtilityPrefill", state.profile.disableUtilityPrefill, "Turn this ON if your API (like Claude) errors out during Image Gen, Banlist, or Story Planner generation.")}
+      <div class="mtab-setting-row">${settingText("Target Word Count", "Leave empty for no limit")}${inputField("", "userWordCount", state.profile.userWordCount, "e.g. 400", "number")}</div>
+      <div class="mtab-setting-row">${settingText("Language Output", "Leave empty for default (English)")}${inputField("", "userLanguage", state.profile.userLanguage, "e.g. Arabic, French...")}</div>
+      <div class="mtab-setting-row">${settingText("User Gender", "Ensure the AI addresses you correctly")}${selectField("", "userPronouns", state.profile.userPronouns, [["off", "Off"], ["male", "Male (Him/He)"], ["female", "Female (Her/She)"]])}</div>
+      ${toggleGeneric("Cinematic Sounds", "onomatopoeia.enabled", state.profile.onomatopoeia.enabled, "Force the AI to use precise phonetic sound words (e.g., click, thud) instead of abstract descriptions.")}
+      ${state.profile.onomatopoeia.enabled ? toggleGeneric("Animate Sounds", "onomatopoeia.useStyling", state.profile.onomatopoeia.useStyling, "Wrap in HTML tags. For capable AI only.") : ""}
     </div>`;
 }
 function renderBlocks() {
-  const addons = state.logic?.addons || [];
   const blocks = state.logic?.blocks || [];
   return `
-    ${tabHeader("Add-ons & Blocks", "Gameplay modules and response panels injected into Megumin prompts.", "puzzle", "#10b981", `${state.profile.addons.length + state.profile.blocks.length} Active`, "#10b981")}
-    <div class="wstyle-section-head blue">${icon("puzzle")} Gameplay Add-ons</div>
-    <div class="mtab-card-grid">
-      ${addons.map((item) => moduleCard(item, state.profile.addons.includes(item.id), "addons")).join("")}
-    </div>
-    <div class="wstyle-section-head green">${icon("cubes")} Response Blocks</div>
+    ${tabHeader("Response Blocks", "Attach extra UI panels to every AI response.", "fa-cubes", "#10b981", `${state.profile.blocks.length} Active`, "#10b981", "fa-cubes")}
     <div class="mtab-card-grid">
       ${blocks.map((item) => moduleCard(item, state.profile.blocks.includes(item.id), "blocks")).join("")}
     </div>`;
 }
 function renderThinking() {
-  const models = state.logic?.models || [];
-  const grouped = groupModels(models);
+  const currentType = currentCotType();
+  const currentLang = currentCotLang();
   return `
-    ${tabHeader("Chain of Thought", "Configure the AI's thinking framework and reasoning depth.", "brain", "#8b5cf6", state.profile.model, "#8b5cf6")}
-    <div class="mtab-panel">
-      <div class="mtab-panel-title purple">${icon("brain")} Reasoning Control</div>
-      <div class="mtab-card-grid compact">
-        ${["unspecified", "50", "100", "200", "custom"].map((effort) => infoCard({
-    title: effort === "unspecified" ? "Default" : effort === "custom" ? "Custom" : `${effort} Words`,
-    sub: effort === "unspecified" ? "Use the selected model preset." : "Add a target thinking budget.",
-    active: state.profile.thinkEffort === effort,
-    action: "select",
-    path: "thinkEffort",
-    value: effort
-  })).join("")}
-      </div>
-      ${state.profile.thinkEffort === "custom" ? inputField("Custom Think Effort", "customThinkEffort", state.profile.customThinkEffort, "100") : ""}
-      ${toggleGeneric("Gemini Thinking", "thinkingV2", state.profile.thinkingV2, "Inject the triple think opener used by the original Suite.")}
+    ${tabHeader("Chain of Thought", "Configure the AI's thinking framework and reasoning depth.", "fa-brain", "#a855f7", "", "#a855f7")}
+    <div class="wstyle-section-head purple">${icon("fa-gauge-high")} Thinking Effort</div>
+    <div class="mtab-callout purple">${icon("fa-circle-info")} <span><strong>Hint:</strong> When using V7 CoT, it is highly recommended to <strong>not</strong> use low Thinking Effort.</span></div>
+    <div class="mtab-card-grid compact">
+      ${[
+    ["100", "100 Words"],
+    ["250", "250 Words"],
+    ["450", "450 Words"],
+    ["custom", "Custom"],
+    ["unspecified", "Unspecified"]
+  ].map(([id, label]) => infoCard({ title: label, sub: "", active: state.profile.thinkEffort === normalizeEffort(id), action: "select", path: "thinkEffort", value: normalizeEffort(id) })).join("")}
     </div>
-    ${Object.entries(grouped).map(([group, items]) => `
-      <div class="wstyle-section-head purple">${icon("spark")} ${escapeHtml(group)}</div>
-      <div class="mtab-card-grid compact">
-        ${items.map((item) => infoCard({ title: item.label || readableModel(item.id), sub: item.id, active: state.profile.model === item.id, action: "select", path: "model", value: item.id })).join("")}
-      </div>`).join("")}`;
+    ${state.profile.thinkEffort === "custom" ? `<div class="mtab-panel">${inputField("Custom Word Count", "customThinkEffort", state.profile.customThinkEffort, "100", "number")}</div>` : ""}
+    ${toggleGeneric(`${icon("fa-brain")} Gemini Thinking`, "thinkingV2", state.profile.thinkingV2, "Enable only for Gemini. When enabled, you MUST add <think> and </think> to the Reasoning Formatting prefix/suffix. Note: Enable Prefill ONLY if using Gemini models.", true)}
+    <div class="wstyle-section-head purple">${icon("fa-diagram-project")} Thinking Framework</div>
+    <div class="mtab-card-grid">
+      ${cotFrameworks(currentType, currentLang).map((item) => infoCard({ title: item.label, sub: item.desc, active: currentType === item.id, action: "select", path: "model", value: item.value, badge: item.isNew ? "New" : "" })).join("")}
+    </div>
+    ${currentType !== "off" ? `<div class="wstyle-section-head gold">${icon("fa-language")} Language</div><div class="mtab-card-grid compact">${cotLanguages(currentType).map((item) => infoCard({ title: item.label, sub: "", active: currentLang === item.id, action: "select", path: "model", value: `cot-${currentType}-${item.id}`, badge: item.rec ? "Pro Tip" : "" })).join("")}</div>` : ""}`;
 }
 function renderStory() {
   const sp = state.profile.storyPlan;
   return `
-    ${tabHeader("Story Planner", "Brainstorm and track plot milestones automatically.", "map", "#f59e0b", sp.enabled ? "Enabled" : "Disabled", sp.enabled ? "#10b981" : "#a1a1aa")}
-    ${toggleGeneric("Enable Story Planner", "storyPlan.enabled", sp.enabled, "Inject the current plan and tracker into Megumin prompts.")}
-    <div class="mtab-panel">
-      <div class="mtab-panel-title gold">${icon("settings")} Engine Settings</div>
-      <div class="mtab-setting-row">${settingText("Generation Backend", "Utility generations run through Lumiverse quiet generation.")}${selectField("", "storyPlan.backend", sp.backend, [["direct", "Direct API Call"]])}</div>
+    ${tabHeader("Story Planner", "Brainstorm and track plot milestones automatically.", "fa-map-location-dot", "#f59e0b", sp.enabled ? "Enabled" : "Disabled", sp.enabled ? "#10b981" : "#a1a1aa", sp.enabled ? "fa-circle-check" : "fa-circle-xmark")}
+    ${toggleGeneric(`${icon("fa-map-location-dot")} Enable Story Planner`, "storyPlan.enabled", sp.enabled, "Just enable and hit generate plan now and let the ai do the rest.", true)}
+    <div class="mtab-panel" style="display:${sp.enabled ? "block" : "none"};">
+      <div class="mtab-panel-title gold">${icon("fa-gears")} Engine Settings</div>
+      <div class="mtab-setting-row">${settingText("Generation Backend", "")}${selectField("", "storyPlan.backend", sp.backend, [["direct", "Direct API Call (Fast)"]])}</div>
       <div class="mtab-setting-row">${settingText("Auto-Trigger Mode", "Generate new plans automatically.")}${selectField("", "storyPlan.triggerMode", sp.triggerMode, [["manual", "Manual Only"], ["frequency", "Every X Replies"]])}</div>
-      ${sp.triggerMode === "frequency" ? `<div class="mtab-setting-row">${settingText("Every X Replies", "Reply cadence for background planning.")}${inputField("", "storyPlan.autoFreq", String(sp.autoFreq), "10", "number")}</div>` : ""}
+      ${sp.triggerMode === "frequency" ? `<div class="mtab-setting-row">${settingText("Every X Replies", "")}${inputField("", "storyPlan.autoFreq", String(sp.autoFreq), "10", "number")}</div>` : ""}
     </div>
-    <div class="mtab-panel">
+    <div class="mtab-panel" style="display:${sp.enabled ? "block" : "none"};">
       <div class="panel-heading-row">
-        <div class="mtab-panel-title gold">${icon("book")} Current Story Plan</div>
-        <button class="wstyle-gen-btn" type="button" data-action="story-generate">${icon("bolt")} Generate Plan Now</button>
+        <div class="mtab-panel-title gold">${icon("fa-book-open")} Current Story Plan</div>
+        <button class="wstyle-gen-btn" type="button" data-action="story-generate">${icon("fa-bolt")} Generate Plan Now</button>
       </div>
       <textarea class="ps-modern-input textarea-xl" data-bind="storyPlan.currentPlan" placeholder="Generated plot milestones will appear here.">${escapeHtml(sp.currentPlan)}</textarea>
-      <div class="mtab-callout gold">${icon("info")} <span>A tracker is injected at the end of each response when the planner is enabled.</span></div>
     </div>`;
 }
 function renderBanList() {
   return `
-    ${tabHeader("Dynamic Ban List", "Detect and ban overused phrases from AI responses.", "ban", "#ef4444", `${state.profile.banList.length} Banned`, "#ef4444")}
-    <div class="mtab-panel">
+    ${tabHeader("Dynamic Ban List", "Detect and ban overused phrases from AI responses.", "fa-ban", "#ef4444", `${state.profile.banList.length} Banned`, "#ef4444", "fa-ban")}
+    <div class="mtab-panel" style="margin-bottom:16px;">
       <div class="panel-heading-row">
-        <div class="mtab-panel-title purple">${icon("radar")} AI Slop Detector</div>
-        <button class="wstyle-gen-btn purple-bg" type="button" data-action="ban-analyze">${icon("radar")} Analyze Chat</button>
+        <div class="mtab-panel-title purple">${icon("fa-radar")} AI Slop Detector</div>
+        <button class="wstyle-gen-btn purple-bg" type="button" data-action="ban-analyze">${icon("fa-radar")} Analyze Chat</button>
       </div>
-      <div class="mtab-setting-row">${settingText("Generator Backend", "Choose how to generate the analysis.")}${selectField("", "banListBackend", state.profile.banListBackend, [["direct", "Direct API Call"]])}</div>
+      <div class="mtab-setting-row">${settingText("Generator Backend", "Choose how to generate the analysis.")}${selectField("", "banListBackend", state.profile.banListBackend, [["direct", "Direct API Call (Fast)"]])}</div>
     </div>
-    <div class="mtab-panel">
-      <div class="mtab-panel-title red">${icon("plus")} Add Phrase</div>
+    <div class="mtab-panel" style="margin-bottom:16px;">
+      <div class="mtab-panel-title red">${icon("fa-plus-circle")} Add Phrase</div>
       <div class="inline-form">
-        <textarea class="ps-modern-input" placeholder="Add one phrase per line..." id="ban-manual"></textarea>
-        <button class="ps-modern-btn secondary" type="button" data-action="ban-add">${icon("plus")} Add</button>
+        <input class="ps-modern-input" placeholder="Manually add a phrase to ban..." id="ban-manual">
+        <button class="ps-modern-btn secondary" type="button" data-action="ban-add">Add</button>
       </div>
     </div>
     <div class="panel-heading-row">
-      <div class="wstyle-section-head red">${icon("list")} Active Banned Phrases</div>
-      <button class="ps-modern-btn secondary danger mini" type="button" data-action="ban-clear">${icon("trash")} Clear All</button>
+      <div class="wstyle-section-head red">${icon("fa-list")} Active Banned Phrases</div>
+      <div class="mtab-btn-row">
+        <button class="ps-modern-btn secondary mini blue-text" type="button">${icon("fa-file-import")} Import</button>
+        <button class="ps-modern-btn secondary mini green-text" type="button" data-action="ban-export">${icon("fa-file-export")} Export</button>
+        <button class="ps-modern-btn secondary danger mini" type="button" data-action="ban-clear">${icon("fa-trash-can")} Clear All</button>
+      </div>
     </div>
     <div class="mtab-card-list dashed">
-      ${state.profile.banList.length ? state.profile.banList.map((item) => `<button type="button" class="mtab-ban-item" data-action="ban-remove" data-value="${escapeHtml(item)}"><span>${escapeHtml(item)}</span>${icon("x")}</button>`).join("") : `<span class="empty-text">No phrases banned yet.</span>`}
+      ${state.profile.banList.length ? state.profile.banList.map((item) => `<button type="button" class="mtab-ban-item" data-action="ban-remove" data-value="${escapeHtml(item)}"><span>${escapeHtml(item)}</span>${icon("fa-xmark")}</button>`).join("") : `<span class="empty-text">No phrases banned yet.</span>`}
     </div>
-    <div class="mtab-callout purple">${icon("info")} <span>Ban entries become strict negative style rules during prompt assembly.</span></div>`;
+    <div class="mtab-callout purple">${icon("fa-circle-info")} <span>This is a beta feature. Don't complain if you have to generate more than once.</span></div>`;
 }
 function renderImage() {
   const ig = state.profile.imageGen;
-  const previewImage = state.uiAssets.mascotImage || state.uiAssets.heroImages[0] || "";
   return `
-    ${tabHeader("Image Generation", "Use Lumiverse image connections for automatic scene rendering.", "image", "#06b6d4", ig.enabled ? "Enabled" : "Disabled", ig.enabled ? "#10b981" : "#a1a1aa")}
-    ${toggleGeneric("Enable Image Generation", "imageGen.enabled", ig.enabled, "Allow Megumin to generate scene images.")}
-    <div class="image-lab">
-      <div class="mtab-panel">
-        <div class="mtab-panel-title blue">${icon("link")} Connection & Backend</div>
-        <div class="mtab-setting-row">${settingText("Connection", "Uses the selected Lumiverse image-gen connection.")}${selectField("", "imageGen.connectionId", ig.connectionId, [["", "Default"], ...state.imageConnections.map((c) => [String(c.id), `${c.name} (${c.provider})`])])}</div>
-        <div class="mtab-setting-row">${settingText("Prompt Generator", "Direct quiet generation is used for prompt creation.")}${selectField("", "imageGen.generatorBackend", ig.generatorBackend, [["direct", "Direct API Call"]])}</div>
-        <div class="mtab-setting-row">${settingText("Trigger Mode", "Choose when Megumin asks for an image.")}${selectField("", "imageGen.triggerMode", ig.triggerMode, [["always", "Every Reply"], ["frequency", "After X Replies"], ["conditional", "Only when a character sends a picture"], ["manual", "Manual Button Only"]])}</div>
-        ${ig.triggerMode === "frequency" ? `<div class="mtab-setting-row">${settingText("Every X Replies", "Reply cadence for automatic images.")}${inputField("", "imageGen.autoGenFreq", String(ig.autoGenFreq), "1", "number")}</div>` : ""}
-        ${toggleGeneric("Preview Prompt Before Sending", "imageGen.previewPrompt", ig.previewPrompt, "Preview or edit prompts before rendering.")}
-      </div>
-      <div class="visual-preview" ${previewImage ? `style="background-image:url('${escapeHtml(previewImage)}')"` : ""}>
-        <div>${icon("spark")} Kazuma Image Lab</div>
-      </div>
+    ${tabHeader("Image Generation", "ComfyUI integration for automatic scene rendering.", "fa-image", "#06b6d4", ig.enabled ? "Enabled" : "Disabled", ig.enabled ? "#10b981" : "#a1a1aa", ig.enabled ? "fa-circle-check" : "fa-circle-xmark")}
+    ${toggleGeneric("Enable Image Generation", "imageGen.enabled", ig.enabled, "Activate ComfyUI integration for this specific character/group.")}
+    <div class="mtab-panel">
+      <div class="mtab-panel-title blue">${icon("fa-wand-magic-sparkles")} Prompt Generator Backend</div>
+      <div class="mtab-setting-row">${settingText("Generation Method", '"Direct" is faster. "Megumin Image" is more creative.')}${selectField("", "imageGen.generatorBackend", ig.generatorBackend, [["direct", "Direct API Call (Fast)"]])}</div>
     </div>
     <div class="mtab-panel">
-      <div class="mtab-panel-title gold">${icon("pen")} Prompt Formatting</div>
-      <div class="setting-grid">
-        ${selectField("Model Style Format", "imageGen.promptStyle", ig.promptStyle, [["standard", "Standard"], ["illustrious", "Illustrious / Pony Tags"], ["sdxl", "SDXL Natural Prose"]])}
-        ${selectField("Camera Perspective", "imageGen.promptPerspective", ig.promptPerspective, [["scene", "Cinematic Scene"], ["pov", "First Person POV"], ["character", "Character Portrait"]])}
-      </div>
-      ${inputField("Extra Instructions", "imageGen.promptExtra", ig.promptExtra, "moody lighting, dark atmosphere...")}
+      <div class="mtab-panel-title blue">${icon("fa-plug")} ComfyUI Server & Workflow</div>
+      <div class="mtab-setting-row">${settingText("Connection", "Select the ComfyUI-capable image connection.")}${selectField("", "imageGen.connectionId", ig.connectionId, [["", "Default"], ...state.imageConnections.map((c) => [String(c.id), `${c.name} (${c.provider})`])])}</div>
+      <div class="inline-form"><input class="ps-modern-input" placeholder="http://127.0.0.1:8188"><button class="ps-modern-btn secondary blue-text" type="button" data-action="image-test">${icon("fa-vial")} Test</button></div>
+      <div class="mtab-btn-row workflow-row"><button class="ps-modern-btn secondary" type="button" data-action="image-workflow-noop">${icon("fa-plus")} New</button><button class="ps-modern-btn secondary" type="button" data-action="image-workflow-noop">${icon("fa-pen")} Edit</button><button class="ps-modern-btn secondary danger" type="button" data-action="image-workflow-noop">${icon("fa-trash-can")} Delete</button></div>
     </div>
     <div class="mtab-panel">
-      <div class="mtab-panel-title gold">${icon("sliders")} Image Parameters</div>
-      <div class="resolution-grid">${RESOLUTIONS.map((res) => `<button type="button" class="res-pill ${ig.imgWidth === res.w && ig.imgHeight === res.h ? "active" : ""}" data-action="select-resolution" data-w="${res.w}" data-h="${res.h}">${escapeHtml(res.label)}</button>`).join("")}</div>
+      <div class="mtab-panel-title gold">${icon("fa-sliders")} Triggers & Formatting</div>
+      <div class="mtab-setting-row">${settingText("Trigger Mode", "")}${selectField("", "imageGen.triggerMode", ig.triggerMode, [["always", "Always (Every Reply)"], ["frequency", "After X Replies"], ["conditional", "Only when character sends a pic"], ["manual", "Manual Button Only"]])}</div>
+      ${ig.triggerMode === "frequency" ? `<div class="mtab-setting-row">${settingText("Every X Replies", "")}${inputField("", "imageGen.autoGenFreq", String(ig.autoGenFreq), "1", "number")}</div>` : ""}
+      ${toggleGeneric("Preview Prompt Before Sending", "imageGen.previewPrompt", ig.previewPrompt, "Preview the prompt before sending it to ComfyUI.")}
+      <div class="setting-grid">${selectField("Model Style Format", "imageGen.promptStyle", ig.promptStyle, [["standard", "Standard"], ["illustrious", "Illustrious / Pony Tags"], ["sdxl", "SDXL Natural Prose"]])}${selectField("Camera Perspective", "imageGen.promptPerspective", ig.promptPerspective, [["scene", "Cinematic Scene"], ["pov", "First Person POV"], ["character", "Character Portrait"]])}</div>
+      ${inputField("Extra Instructions...", "imageGen.promptExtra", ig.promptExtra, "moody lighting, dark atmosphere...")}
+    </div>
+    <div class="mtab-panel">
+      <div class="mtab-panel-title gold">${icon("fa-sliders")} Image Parameters</div>
       <div class="setting-grid">
+        ${inputField("Model", "imageGen.selectedModel", ig.selectedModel, "model.safetensors")}
+        ${inputField("Sampler", "imageGen.selectedSampler", ig.selectedSampler, "euler")}
         ${inputField("Width", "imageGen.imgWidth", String(ig.imgWidth), "1024", "number")}
         ${inputField("Height", "imageGen.imgHeight", String(ig.imgHeight), "1024", "number")}
         ${inputField("Steps", "imageGen.steps", String(ig.steps), "20", "number")}
         ${inputField("CFG Scale", "imageGen.cfg", String(ig.cfg), "7", "number")}
-        ${inputField("Seed", "imageGen.customSeed", String(ig.customSeed), "-1", "number")}
-        ${inputField("Sampler", "imageGen.selectedSampler", ig.selectedSampler, "euler")}
-        ${inputField("Scheduler", "imageGen.scheduler", ig.scheduler, "normal")}
-        ${inputField("Checkpoint", "imageGen.selectedModel", ig.selectedModel, "model.safetensors")}
+        ${inputField("Denoise", "imageGen.denoise", String(ig.denoise), "0.5", "number")}
+        ${inputField("CLIP Skip", "imageGen.clipSkip", String(ig.clipSkip), "1", "number")}
       </div>
-      <textarea class="ps-modern-input" data-bind="imageGen.customNegative" placeholder="Negative prompt...">${escapeHtml(ig.customNegative)}</textarea>
+      <div class="wstyle-section-head blue">${icon("fa-up-right-and-down-left-from-center")} Resolution Preset</div>
+      <div class="resolution-grid">${RESOLUTIONS.map((res) => `<button type="button" class="res-pill ${ig.imgWidth === res.w && ig.imgHeight === res.h ? "active" : ""}" data-action="select-resolution" data-w="${res.w}" data-h="${res.h}">${escapeHtml(res.label)}</button>`).join("")}</div>
+      <div class="mtab-setting-row">${settingText("Seed (-1 for random)", "")}${inputField("", "imageGen.customSeed", String(ig.customSeed), "-1", "number")}</div>
+      <textarea class="ps-modern-input" data-bind="imageGen.customNegative" placeholder="Negative Prompt Override">${escapeHtml(ig.customNegative)}</textarea>
+    </div>
+    <div class="mtab-panel">
+      <div class="mtab-panel-title purple">${icon("fa-flask")} LoRA Lab</div>
+      <div class="setting-grid">${[1, 2, 3, 4].map((slot) => loraSlot(slot)).join("")}</div>
     </div>
     <div class="mtab-panel">
       <div class="panel-heading-row">
-        <div class="mtab-panel-title blue">${icon("bolt")} Manual Render</div>
-        <button class="wstyle-gen-btn blue-bg" type="button" data-action="image-manual">${icon("image")} Generate Image</button>
+        <div class="mtab-panel-title blue">${icon("fa-bolt")} Manual Render</div>
+        <button class="wstyle-gen-btn blue-bg" type="button" data-action="image-manual">${icon("fa-image")} Generate Image</button>
       </div>
       <textarea id="meg-manual-image-prompt" class="ps-modern-input" placeholder="Optional manual image prompt..."></textarea>
     </div>
     <details class="mtab-panel">
-      <summary class="mtab-panel-title blue">${icon("code")} ComfyUI Field Placeholders</summary>
+      <summary class="mtab-panel-title blue">${icon("fa-code")} ComfyUI Field Placeholders</summary>
       <div class="placeholder-grid">${KAZUMA_PLACEHOLDERS.map((item) => `<div><code>${escapeHtml(item.key)}</code><span>${escapeHtml(item.desc)}</span></div>`).join("")}</div>
     </details>`;
 }
 function renderNpc() {
   const bank = state.profile.npcBank;
   return `
-    ${tabHeader("NPCs Bank", "Automatically extract and track significant NPCs.", "address", "#22c55e", `${bank.npcs.length} NPCs`, "#22c55e")}
+    ${tabHeader("NPCs Bank", "Automatically extract and track significant NPCs in the story.", "fa-address-book", "#f43f5e", `${bank.npcs.length} NPCs`, "#f43f5e", "fa-users")}
     <div class="mtab-panel">
-      <div class="mtab-panel-title green">${icon("settings")} Bank Settings</div>
-      ${toggleGeneric("Enable NPC Bank", "npcBank.enabled", bank.enabled, "Capture and inject significant NPC dossiers.")}
-      ${toggleGeneric("Send Portraits To AI", "npcBank.sendPortraitsToAi", bank.sendPortraitsToAi, "Use generated portraits as multimodal context when relevant.")}
-      <button class="wstyle-gen-btn green-bg" type="button" data-action="npc-scan">${icon("search")} Scan Last Message</button>
+      ${toggleGeneric("Enable NPC Bank", "npcBank.enabled", bank.enabled, "When enabled, the AI generates detailed dossiers for new NPCs, which are saved here and injected when relevant.")}
+      ${toggleGeneric("Send Portraits to AI", "npcBank.sendPortraitsToAi", bank.sendPortraitsToAi, "If an injected NPC has a portrait, send the image to the AI to help it visualize the character.")}
     </div>
-    ${bank.npcs.length ? `<div class="npc-grid">${bank.npcs.map(renderNpcCard).join("")}</div>` : emptyWithMascot("No NPCs saved yet.", "Dossiers appear here after Megumin extracts them from assistant replies.")}`;
+    <div class="panel-heading-row"><div class="wstyle-section-head red">${icon("fa-address-book")} Saved NPCs <span class="pill-count">${bank.npcs.length}</span></div><button class="ps-modern-btn secondary danger mini" type="button" data-action="npc-clear">${icon("fa-trash-can")} Clear All</button></div>
+    ${bank.npcs.length ? `<div class="npc-list">${bank.npcs.map(renderNpcCard).join("")}</div>` : emptyWithMascot("No NPCs saved yet.", "Dossiers appear here after Megumin extracts them from assistant replies.")}`;
 }
 function renderNpcCard(npc) {
+  const initials = escapeHtml(String(npc.name || "?").slice(0, 1));
   return `
-    <article class="npc-card">
-      ${npc.pfpImageUrl ? `<img class="npc-img" src="${escapeHtml(npc.pfpImageUrl)}" alt="">` : `<div class="npc-img placeholder">${escapeHtml(String(npc.name || "?").slice(0, 1))}</div>`}
-      <div class="npc-body">
-        <div class="npc-title-row"><h3>${escapeHtml(npc.name)}</h3><button class="icon-btn danger" type="button" data-action="npc-remove" data-name="${escapeHtml(npc.name)}">${icon("trash")}</button></div>
-        <p class="npc-meta">${escapeHtml([npc.age, npc.sex, npc.occupation].filter(Boolean).join(" | ") || "No metadata")}</p>
-        <p>${escapeHtml(npc.appearance || npc.background || "No dossier details yet.")}</p>
-        <div class="npc-actions">
-          <button class="ps-modern-btn secondary mini" type="button" data-action="npc-portrait" data-name="${escapeHtml(npc.name)}">${icon("image")} Portrait</button>
+    <details class="npc-card">
+      <summary class="npc-card-header">
+        <span class="npc-chevron">${icon("fa-chevron-right")}</span>
+        ${npc.pfpImageUrl ? `<img class="npc-mini-pfp" src="${escapeHtml(npc.pfpImageUrl)}" alt="">` : `<span class="npc-mini-pfp placeholder">${initials}</span>`}
+        <span class="npc-card-title"><strong>${escapeHtml(npc.name)}</strong><small>${escapeHtml([npc.age, npc.sex].filter(Boolean).join(" / ") || "Unknown")}</small></span>
+        <button class="icon-btn danger" type="button" data-action="npc-remove" data-name="${escapeHtml(npc.name)}">${icon("fa-trash-can")}</button>
+      </summary>
+      <div class="npc-card-body">
+        <div class="npc-pfp-container">${npc.pfpImageUrl ? `<img src="${escapeHtml(npc.pfpImageUrl)}" alt="">` : `<span>${initials}</span>`}<button class="ps-modern-btn secondary mini" type="button">${icon("fa-upload")} Upload</button><button class="ps-modern-btn secondary mini" type="button" data-action="npc-portrait" data-name="${escapeHtml(npc.name)}">${icon("fa-image")} Generate</button></div>
+        <div class="npc-fields">
+          ${npcField("Appearance", npc.appearance)}
+          ${npcField("Occupation", npc.occupation)}
+          ${npcField("Background", npc.background)}
+          ${npcField("Inner Circle", npc.innerCircle)}
+          ${npcField("Personality", npc.personality)}
+          ${npcField("Current Agenda", npc.agenda)}
+          ${npcField("Hidden Layer", npc.hiddenLayer)}
         </div>
       </div>
-    </article>`;
+    </details>`;
 }
 function renderMemory() {
   const mem = state.profile.memoryCore;
-  const workingPct = clamp(mem.workingLimit / Math.max(1, mem.workingLimit + mem.shortTermLimit) * 100, 8, 80);
-  const shortPct = clamp(mem.shortTermChunks.length / Math.max(1, mem.shortTermLimit) * 100, 5, 100);
-  const longPct = clamp(mem.longTermVault.length / Math.max(1, mem.longTermVault.length + mem.shortTermChunks.length || 1) * 100, 5, 100);
+  const totalUnits = Math.max(1, mem.workingLimit + mem.shortTermLimit + mem.longTermVault.length + mem.shortTermChunks.length);
+  const workingPct = clamp(mem.workingLimit / totalUnits * 100, 8, 70);
+  const shortPct = clamp(mem.shortTermLimit / totalUnits * 100, 8, 70);
+  const vaultPct = clamp(mem.longTermVault.length / totalUnits * 100, 5, 70);
   return `
-    ${tabHeader("Memory Core", "Advanced 3-tier context and history management.", "memory", "#38bdf8", mem.enabled ? "Enabled" : "Disabled", mem.enabled ? "#10b981" : "#a1a1aa")}
-    <div class="memory-dashboard">
-      ${statTile("Working", String(mem.workingLimit), "live messages", "#10b981")}
-      ${statTile("Short-Term", String(mem.shortTermChunks.length), "summaries", "#f59e0b")}
-      ${statTile("Long-Term", String(mem.longTermVault.length), "vault entries", "#3b82f6")}
-      ${statTile("Saved", `~${estimateTokensSaved()}`, "tokens", "#a855f7")}
+    ${tabHeader("Memory Core", "3-Tier Context Management: Working, Short-Term, and Long-Term Vector DB.", "fa-memory", "#10b981", mem.enabled ? "Enabled" : "Disabled", mem.enabled ? "#10b981" : "#a1a1aa", mem.enabled ? "fa-circle-check" : "fa-circle-xmark")}
+    ${toggleGeneric("Enable Memory Core", "memoryCore.enabled", mem.enabled, "Archiving happens silently in the background. Old messages fade in the UI and are replaced in the prompt with injected summaries.")}
+    <div class="mtab-panel">
+      <div class="panel-heading-row"><div class="mtab-panel-title green">${icon("fa-chart-pie")} Context Allocation Dashboard</div><span class="mtab-header-badge" style="--badge-color:#a855f7;">~${estimateTokensSaved()} Tokens Saved</span></div>
+      <div class="mem-progress-container"><span class="mem-prog-working" style="width:${workingPct}%"></span><span class="mem-prog-short" style="width:${shortPct}%"></span><span class="mem-prog-long" style="width:${vaultPct}%"></span></div>
+      <div class="mem-legend"><span>Working</span><span>Pend Short</span><span>Short</span><span>Pend Vault</span><span>Vault</span></div>
+      <div class="mtab-callout green">${icon("fa-spinner")} <span>Monitoring Chat History...</span></div>
     </div>
     <div class="mtab-panel">
-      <div class="mtab-panel-title blue">${icon("memory")} Memory Architecture</div>
-      ${toggleGeneric("Enable Memory Core", "memoryCore.enabled", mem.enabled, "Archive older messages and inject relevant memory.")}
+      <div class="mtab-panel-title blue">${icon("fa-gears")} Extraction Engine Settings</div>
+      <div class="mtab-callout gold">${icon("fa-circle-info")} <span><strong>How to Use:</strong> Set limits, then use Apply & Extract Pending to archive older turns into Short-Term summaries and the Long-Term Vault.</span></div>
       <div class="setting-grid">
-        ${selectField("Architecture", "memoryCore.architecture", mem.architecture, [["raw_short_long", "Raw + Short + Long"], ["raw_long", "Raw + Long"]])}
+        ${selectField("Memory Architecture", "memoryCore.architecture", mem.architecture, [["raw_short_long", "Raw Text + Short-Term Summaries + Vault"], ["raw_long", "Raw Text + Vault Directly (Skip Summaries)"]])}
         ${selectField("Scanner", "memoryCore.scannerEngine", mem.scannerEngine, [["tfidf", "TF-IDF Retrieval"], ["semantic", "Semantic Memory"]])}
-        ${selectField("Trigger", "memoryCore.triggerMode", mem.triggerMode, [["manual", "Manual"], ["frequency", "Every X Replies"]])}
-        ${inputField("Auto Frequency", "memoryCore.autoFreq", String(mem.autoFreq), "10", "number")}
         ${inputField("Working Limit", "memoryCore.workingLimit", String(mem.workingLimit), "30", "number")}
         ${inputField("Short-Term Limit", "memoryCore.shortTermLimit", String(mem.shortTermLimit), "70", "number")}
+        ${selectField("Auto-Trigger Mode", "memoryCore.triggerMode", mem.triggerMode, [["manual", "Manual"], ["frequency", "Every X Replies"]])}
+        ${inputField("Auto Frequency", "memoryCore.autoFreq", String(mem.autoFreq), "10", "number")}
       </div>
-      <div class="mem-progress"><span class="mem-prog-working" style="width:${workingPct}%"></span><span class="mem-prog-short" style="width:${shortPct}%"></span><span class="mem-prog-long" style="width:${longPct}%"></span></div>
-      <button class="wstyle-gen-btn blue-bg" type="button" data-action="memory-process">${icon("bolt")} Apply & Extract Pending</button>
+      <button class="wstyle-gen-btn blue-bg" type="button" data-action="memory-process">${icon("fa-bolt")} Apply & Extract Pending</button>
     </div>
     <div class="mtab-panel">
-      <div class="mtab-panel-title blue">${icon("book")} Long-Term Vault</div>
-      ${(mem.longTermVault || []).slice(-20).reverse().map((chunk) => `<details class="mem-accordion"><summary>${escapeHtml(chunk.id)} <span>${new Date(chunk.timestamp).toLocaleString()}</span></summary><pre>${escapeHtml(chunk.text || chunk.summary || "")}</pre></details>`).join("") || `<span class="empty-text">No vault entries yet.</span>`}
+      <div class="panel-heading-row"><div class="mtab-panel-title gold">${icon("fa-layer-group")} Short-Term Memory</div><button class="ps-modern-btn secondary danger mini" type="button" data-action="memory-clear-short">${icon("fa-trash-can")} Clear All</button></div>
+      ${(mem.shortTermChunks || []).slice(-20).reverse().map((chunk) => memoryAccordion(chunk)).join("") || `<span class="empty-text">No short-term summaries yet.</span>`}
+    </div>
+    <div class="mtab-panel">
+      <div class="panel-heading-row"><div class="mtab-panel-title blue">${icon("fa-database")} Long-Term Vault</div><div class="mtab-btn-row"><button class="ps-modern-btn secondary mini blue-text" type="button" data-action="memory-test-vector">${icon("fa-vial")} Test Scanner</button><button class="ps-modern-btn secondary danger mini" type="button" data-action="memory-clear-vault">${icon("fa-trash-can")} Clear All</button></div></div>
+      <input class="ps-modern-input" placeholder="Search vault...">
+      ${(mem.longTermVault || []).slice(-20).reverse().map((chunk) => memoryAccordion(chunk)).join("") || `<span class="empty-text">No vault entries yet.</span>`}
     </div>`;
 }
 function renderDev() {
+  const coreEngines = state.engines.filter((engine) => !state.customEngines.some((custom) => custom.id === engine.id));
   return `
-    ${tabHeader("Dev Engine Builder", "Clone, edit, and save custom Megumin engine blocks.", "code", "#a855f7", `${state.customEngines.length} Custom`, "#a855f7")}
+    ${tabHeader("Dev Engine Builder", "Clone, edit, and save custom Megumin engine blocks.", "fa-code", "#a855f7", `${state.customEngines.length} Custom`, "#a855f7", "fa-code")}
     <div class="dev-layout">
       <div class="mtab-panel">
-        <div class="mtab-panel-title purple">${icon("wand")} Create Engine</div>
+        <div class="mtab-panel-title purple">${icon("fa-wand-magic-sparkles")} Create Engine</div>
         <div class="setting-grid">
           <label class="ps-field"><span>Engine ID</span><input id="dev-id" class="ps-modern-input" placeholder="engine_id"></label>
           <label class="ps-field"><span>Display Name</span><input id="dev-label" class="ps-modern-input" placeholder="Display name"></label>
@@ -890,15 +1011,19 @@ function renderDev() {
         <textarea id="dev-p4" class="ps-modern-input dev-area" placeholder="[[prompt4]] Physicality / rules block"></textarea>
         <textarea id="dev-p5" class="ps-modern-input dev-area" placeholder="[[prompt5]] Continuation block"></textarea>
         <textarea id="dev-p6" class="ps-modern-input dev-area" placeholder="[[prompt6]] Final reminder block"></textarea>
-        <button class="wstyle-gen-btn green-bg" type="button" data-action="dev-save">${icon("save")} Save Engine</button>
+        <div class="mtab-btn-row"><button class="wstyle-gen-btn green-bg" type="button" data-action="dev-save">${icon("fa-save")} Save Engine</button><button class="ps-modern-btn secondary" type="button">${icon("fa-file-import")} Import Engine JSON</button></div>
       </div>
       <div class="mtab-panel">
-        <div class="mtab-panel-title green">${icon("cubes")} Custom Engines</div>
-        ${state.customEngines.length ? state.customEngines.map((engine) => `<div class="custom-engine-row"><div><strong>${escapeHtml(engine.label || engine.id)}</strong><span>${escapeHtml(engine.id)}</span></div><button class="icon-btn danger" type="button" data-action="dev-delete" data-id="${escapeHtml(engine.id)}">${icon("trash")}</button></div>`).join("") : emptyWithMascot("No custom engines yet.", "Create one on the left, then select it from Core Engines.")}
+        <div class="mtab-panel-title gold">${icon("fa-copy")} Clone Core Engine</div>
+        ${coreEngines.slice(0, 6).map((engine) => `<div class="custom-engine-row"><div><strong>${escapeHtml(engine.label || engine.id)}</strong><span>${escapeHtml(engine.id)}</span></div><button class="ps-modern-btn secondary mini" type="button">${icon("fa-copy")} Clone</button></div>`).join("")}
+      </div>
+      <div class="mtab-panel dev-full">
+        <div class="mtab-panel-title green">${icon("fa-cubes")} Custom Engines</div>
+        ${state.customEngines.length ? state.customEngines.map((engine) => `<div class="custom-engine-row"><div><strong>${escapeHtml(engine.label || engine.id)}</strong><span>${escapeHtml(engine.id)}</span></div><button class="icon-btn danger" type="button" data-action="dev-delete" data-id="${escapeHtml(engine.id)}">${icon("fa-trash-can")}</button></div>`).join("") : emptyWithMascot("No custom engines yet.", "Create one on the left, then select it from Core Engines.")}
       </div>
     </div>`;
 }
-function tabHeader(title, sub, iconName, color, badge, badgeColor) {
+function tabHeader(title, sub, iconName, color, badge, badgeColor, badgeIcon = "fa-circle-check") {
   return `
     <div class="mtab-header">
       <div class="mtab-header-left">
@@ -908,14 +1033,16 @@ function tabHeader(title, sub, iconName, color, badge, badgeColor) {
           <p>${escapeHtml(sub)}</p>
         </div>
       </div>
-      <div class="mtab-header-badge" style="--badge-color:${badgeColor};">${icon("check")} ${escapeHtml(badge)}</div>
+      ${badge ? `<div class="mtab-header-badge" style="--badge-color:${badgeColor};">${icon(badgeIcon)} ${escapeHtml(badge)}</div>` : ""}
     </div>`;
 }
 function filterPill(value, active, count) {
-  return `<button class="wstyle-filter-pill ${active ? "active" : ""}" type="button" data-action="engine-filter" data-value="${escapeHtml(value)}">${escapeHtml(value === "all" ? "All" : value)} <span class="pill-count">${count}</span></button>`;
+  const label = value === "all" ? "All" : value;
+  return `<button class="wstyle-filter-pill ${active ? "active" : ""}" type="button" data-action="engine-filter" data-value="${escapeHtml(value)}">${value === "V6" ? icon("fa-lock") : ""}${escapeHtml(label)} <span class="pill-count">${count}</span></button>`;
 }
-function stylePill(value, label, count) {
-  return `<button class="wstyle-filter-pill ${state.styleFilter === value ? "active" : ""}" type="button" data-action="style-filter" data-value="${escapeHtml(value)}">${escapeHtml(label)} <span class="pill-count">${count}</span></button>`;
+function stylePill(value, label, count, iconName) {
+  const active = (["all", "precooked", "custom", "generators"].includes(state.styleFilter) ? state.styleFilter : "all") === value;
+  return `<button class="wstyle-filter-pill ${active ? "active" : ""}" type="button" data-action="style-filter" data-value="${escapeHtml(value)}">${iconName ? icon(iconName) : ""}${escapeHtml(label)} <span class="pill-count">${count}</span></button>`;
 }
 function engineCount(filter) {
   return state.engines.filter((engine) => engineMatchesFilter(engine, filter)).length;
@@ -923,8 +1050,6 @@ function engineCount(filter) {
 function engineMatchesFilter(engine, filter) {
   if (filter === "all")
     return true;
-  if (filter === "Custom")
-    return state.customEngines.some((item) => item.id === engine.id);
   const label = `${engine.label || ""} ${engine.id || ""}`.toUpperCase();
   return label.includes(filter.toUpperCase());
 }
@@ -941,7 +1066,7 @@ function engineCard(engine, desc) {
     <span class="ecard-accent" style="--accent:${engine.color || "#10b981"}"></span>
     <span class="ecard-body">
       <span class="ecard-title"><span>${escapeHtml(engine.label || engine.id)}</span></span>
-      <span class="ecard-desc">${escapeHtml(desc)}</span>
+      <span class="ecard-desc">${escapeHtml(desc).replace(/&amp;mdash;/g, "&mdash;")}</span>
       ${badges ? `<span class="badge-row">${badges}</span>` : ""}
     </span>
   </button>`;
@@ -972,9 +1097,9 @@ function moduleCard(item, active, path) {
     </span>
   </button>`;
 }
-function toggleGeneric(label, path, active, desc) {
+function toggleGeneric(label, path, active, desc, rawLabel = false) {
   return `<button type="button" class="mtab-toggle-row ${active ? "active" : ""}" data-action="toggle" data-path="${escapeHtml(path)}">
-    <span class="toggle-info"><span class="toggle-label">${escapeHtml(label)}</span><span class="toggle-desc">${escapeHtml(desc)}</span></span>
+    <span class="toggle-info"><span class="toggle-label">${rawLabel ? label : escapeHtml(label)}</span>${desc ? `<span class="toggle-desc">${escapeHtml(desc).replace(/&amp;mdash;/g, "&mdash;")}</span>` : ""}</span>
     <span class="ps-switch"></span>
   </button>`;
 }
@@ -999,24 +1124,80 @@ function emptyWithMascot(title, text) {
   const image = state.uiAssets.mascotImage || "";
   return `<div class="mtab-locked-state empty-state">${image ? `<img src="${escapeHtml(image)}" alt="">` : icon("spark")}<h3>${escapeHtml(title)}</h3><p>${escapeHtml(text)}</p></div>`;
 }
-function statTile(title, value, sub, color) {
-  return `<div class="mem-stat" style="--stat-color:${color};"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(title)}</span><small>${escapeHtml(sub)}</small></div>`;
+function styleCard(title, desc, rule, active, action, value) {
+  return `<button type="button" class="wstyle-card ${active ? "active" : ""}" data-action="${escapeHtml(action)}" data-value="${escapeHtml(value)}">
+    <span class="card-accent"></span>
+    <span class="card-body">
+      <span class="card-top"><span><span class="card-title">${icon("fa-bolt")} ${escapeHtml(title)}</span><span class="card-desc">${escapeHtml(desc || "")}</span></span>${active ? `<span class="card-status active-status">${icon("fa-check")} Active</span>` : ""}</span>
+      <span class="card-rule">${escapeHtml(strip(rule || "").slice(0, 360))}</span>
+    </span>
+  </button>`;
+}
+function loraSlot(slot) {
+  const suffix = slot === 1 ? "" : String(slot);
+  const loraPath = `imageGen.selectedLora${suffix}`;
+  const weightPath = `imageGen.selectedLoraWt${suffix}`;
+  const loraValue = String(getPath(state.profile, loraPath) || "");
+  const weightValue = Number(getPath(state.profile, weightPath) || 1);
+  return `<div class="lora-slot"><label class="ps-field"><span>LoRA ${slot}</span><input class="ps-modern-input" data-bind="${loraPath}" value="${escapeHtml(loraValue)}" placeholder="None"></label>${rangeField("Weight", weightPath, weightValue, -2, 2)}</div>`;
+}
+function npcField(label, value) {
+  return `<div class="npc-field-section"><strong>${escapeHtml(label)}</strong><p>${escapeHtml(value || "Not recorded.")}</p></div>`;
+}
+function memoryAccordion(chunk) {
+  return `<details class="mem-accordion"><summary class="mem-accordion-header">${escapeHtml(chunk.id || "Memory Chunk")} <span>${new Date(chunk.timestamp || Date.now()).toLocaleString()}</span></summary><div class="mem-accordion-body"><textarea readonly>${escapeHtml(chunk.text || chunk.summary || "")}</textarea></div></details>`;
 }
 function preferredStyleForEngine(engineId) {
   const styles = state.logic?.directStyles || [];
   const target = engineId === "v7-core" ? "dir_v7_core" : engineId === "v7-gentle" ? "dir_v7_gentle" : engineId.startsWith("v7") ? "dir_v7" : "";
   return target ? styles.find((style) => style.id === target) || null : null;
 }
-function groupModels(models) {
-  const groups = {};
-  for (const model of models) {
-    const id = String(model.id || "");
-    const group = id.includes("v7") ? "V7 Frameworks" : id.includes("chinese") ? "Chinese" : id.includes("japanese") ? "Japanese" : "Classic";
-    if (!groups[group])
-      groups[group] = [];
-    groups[group].push(model);
+function currentCotType() {
+  const model = state.profile.model || "cot-off";
+  if (model === "cot-off")
+    return "off";
+  for (const type of ["v7-lite", "v7", "v6-lite", "v6", "v2", "v1"]) {
+    if (model.startsWith(`cot-${type}-`))
+      return type;
   }
-  return groups;
+  return "v1";
+}
+function currentCotLang() {
+  const type = currentCotType();
+  if (type === "off")
+    return "english";
+  return (state.profile.model || "").replace(`cot-${type}-`, "") || "english";
+}
+function normalizeEffort(value) {
+  if (value === "250" || value === "450" || value === "custom" || value === "unspecified")
+    return value;
+  return "100";
+}
+function cotFrameworks(currentType, currentLang) {
+  const lang = currentLang || "english";
+  return [
+    { id: "off", value: "cot-off", label: "CoT Off", desc: "No Chain of Thought or prefill. The AI will respond normally." },
+    { id: "v1", value: `cot-v1-${lang}`, label: "CoT V1 (Classic)", desc: "The original 8-step framework. Focuses heavily on the NPC's internal emotional landscape vs their observable actions." },
+    { id: "v2", value: `cot-v2-${lang}`, label: "CoT V2 (New)", desc: "The new experimental framework. Stricter reality checks, info audits, better NPCs, and hook generation." },
+    { id: "v6", value: `cot-v6-${lang}`, label: "CoT V6 (Dream Team)", desc: "The full 4-phase sequence designed specifically for V6 engines. Specialized validation and modeling.", isNew: true },
+    { id: "v6-lite", value: `cot-v6-lite-${lang}`, label: "CoT V6 (Lite)", desc: "A streamlined 3-phase sequence. Less token overhead while maintaining narrative rules.", isNew: true },
+    { id: "v7", value: "cot-v7-english", label: "CoT V7", desc: "The new V7 sequence with 5-phase strict ground truth rebuilding.", isNew: true },
+    { id: "v7-lite", value: "cot-v7-lite-english", label: "CoT V7 (Lite)", desc: "A streamlined 5-phase sequence for V7.", isNew: true }
+  ].map((item) => ({ ...item, value: item.id === "off" ? item.value : item.value.replace("cot-off-", "cot-") }));
+}
+function cotLanguages(currentType) {
+  if (currentType === "v7" || currentType === "v7-lite")
+    return [{ id: "english", label: "English" }];
+  return [
+    { id: "english", label: "English" },
+    { id: "arabic", label: "Arabic", rec: true },
+    { id: "spanish", label: "Spanish" },
+    { id: "french", label: "French" },
+    { id: "zh", label: "Mandarin" },
+    { id: "ru", label: "Russian" },
+    { id: "jp", label: "Japanese" },
+    { id: "pt", label: "Portuguese" }
+  ];
 }
 function activeTabProfileKeys() {
   if (state.devMode)
@@ -1025,8 +1206,8 @@ function activeTabProfileKeys() {
     0: ["mode", "toggles", "activeStyleId", "aiRule"],
     1: ["personality", "toggles"],
     2: ["activeStyleId", "aiRule", "customStyles", "dnRatio"],
-    3: ["userWordCount", "userLanguage", "userPronouns", "disableUtilityPrefill", "onomatopoeia", "toggles"],
-    4: ["addons", "blocks"],
+    3: ["addons", "userWordCount", "userLanguage", "userPronouns", "disableUtilityPrefill", "onomatopoeia", "toggles"],
+    4: ["blocks"],
     5: ["model", "thinkEffort", "customThinkEffort", "thinkingV2"],
     6: ["storyPlan"],
     7: ["banList", "banListBackend"],
@@ -1038,32 +1219,29 @@ function activeTabProfileKeys() {
 }
 function moduleDesc(id) {
   const descriptions = {
-    death: "Permanent consequences. Characters can die when the scene logic says they would.",
-    combat: "Grounded tactical combat where positioning, injury, fatigue, and numbers matter.",
-    direct: "Forces direct language and reduces polite evasions.",
-    color: "Color-coded dialogue formatting for easier parsing.",
-    npc_events: "Requires new events to grow from prior context or environmental cues.",
-    dn: "Wraps dialogue and narration in XML tags for provider-specific formatting.",
-    info: "A compact world-state panel with time, weather, location, and visible conditions.",
-    summary: "A running story digest updated by the assistant.",
-    cyoa: "A choose-your-own-action panel with suggested next moves.",
-    mvu: "MVU compatibility scaffolding for game-style state outputs.",
-    npc_inner_chatter: "Hidden NPC private thoughts that feed future behavior.",
-    npc_inner_chatter_v2: "A smaller NPC inner chatter block."
+    death: "Enables permanent consequences. Characters - including yours - can die for real. No safety net, no plot armor.",
+    combat: "Activates a grounded, tactical combat layer. Actions have real weight, positioning matters, and you can lose badly.",
+    direct: "Forces AI to say words like D and P. No dancing around the subject, no polite deflection. you know what i mean.",
+    color: "Each character's dialogue is color-coded for easy visual parsing.",
+    npc_events: "Requires all new story events to grow naturally from prior context or environmental cues - no random drama out of nowhere. V6 only.",
+    dn: "Forces dialogue and narration to be wrapped in their respective XML tags. Useful for specific Models for better narration style adherence.",
+    info: "Appends a tidy status panel after each response showing time, weather, location, and what characters are wearing.",
+    summary: "Keeps a running story digest that the AI updates each turn - helps it remember names, events, and details over long sessions.",
+    cyoa: "Choose-Your-Own-Adventure panel with 4 suggested actions for you to pick from each turn.",
+    mvu: "Add MVU Compatibility still in test read more here: https://github.com/KritBlade/MVU_Game_Maker",
+    npc_inner_chatter: "Reveal NPC private thoughts the PC never hears - crushes, resentment, scheming, anxiety. This feeds future NPC behavior.",
+    npc_inner_chatter_v2: "A simpler version of NPC Inner Chatter. use less input token."
   };
   return descriptions[id] || "";
 }
 function personaDesc(id, content) {
   const descriptions = {
-    megumin: "A rebellious, dominant voice with sharper story energy.",
-    director: "Professional narrator with clean cinematic direction.",
-    Nora: "Nora should I say more.",
-    engine: "No personality overlay. The engine speaks in its purest form."
+    megumin: "A rebellious, dominant voice. Adds an edge of arrogance and chaos to the narration. Best for energetic or confrontational stories.",
+    director: "Professional narrator. Clean, authoritative story direction with cinematic awareness.",
+    Nora: "Nora should i say more.",
+    engine: "No personality overlay at all. The engine speaks in its purest form - precise, neutral, and fully under your control. Recommended for most setups."
   };
   return descriptions[id] || content;
-}
-function readableModel(id) {
-  return id.replace(/^cot-/, "").replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 function estimateTokensSaved() {
   const chars = [...state.profile.memoryCore.shortTermChunks, ...state.profile.memoryCore.longTermVault].reduce((total, chunk) => total + (chunk.text || chunk.summary || "").length, 0);
@@ -1130,6 +1308,73 @@ function renderMeguminImageTag(payload) {
   ctxRef.dom.inject(bubble, html, "beforeend");
 }
 function icon(name) {
+  const aliases = {
+    "fa-server": "server",
+    "fa-user-astronaut": "masks",
+    "fa-pen-nib": "pen",
+    "fa-earth-americas": "globe",
+    "fa-puzzle-piece": "puzzle",
+    "fa-brain": "brain",
+    "fa-map": "map",
+    "fa-ban": "ban",
+    "fa-image": "image",
+    "fa-address-book": "address",
+    "fa-memory": "memory",
+    "fa-code": "code",
+    "fa-microchip": "microchip",
+    "fa-circle-check": "check",
+    "fa-check": "check",
+    "fa-toggle-on": "settings",
+    "fa-masks-theater": "masks",
+    "fa-user": "address",
+    "fa-user-lock": "lock",
+    "fa-sliders": "sliders",
+    "fa-fire-burner": "bolt",
+    "fa-book": "book",
+    "fa-wand-magic-sparkles": "wand",
+    "fa-power-off": "power",
+    "fa-lock": "lock",
+    "fa-scale-balanced": "sliders",
+    "fa-save": "save",
+    "fa-arrow-left": "arrow-left",
+    "fa-magnifying-glass": "search",
+    "fa-cubes": "cubes",
+    "fa-gauge-high": "settings",
+    "fa-diagram-project": "cubes",
+    "fa-language": "globe",
+    "fa-map-location-dot": "map",
+    "fa-circle-xmark": "x",
+    "fa-gears": "settings",
+    "fa-book-open": "book",
+    "fa-radar": "radar",
+    "fa-plus-circle": "plus",
+    "fa-list": "list",
+    "fa-file-import": "file-import",
+    "fa-file-export": "file-export",
+    "fa-rotate-left": "reset",
+    "fa-trash-can": "trash",
+    "fa-xmark": "x",
+    "fa-plug": "link",
+    "fa-vial": "flask",
+    "fa-plus": "plus",
+    "fa-pen": "pen",
+    "fa-up-right-and-down-left-from-center": "image",
+    "fa-flask": "flask",
+    "fa-bolt": "bolt",
+    "fa-upload": "upload",
+    "fa-chevron-right": "chevron-right",
+    "fa-users": "masks",
+    "fa-chart-pie": "pie",
+    "fa-spinner": "refresh",
+    "fa-layer-group": "layers",
+    "fa-database": "server",
+    "fa-copy": "copy",
+    "fa-circle-info": "info",
+    "fa-scroll": "book",
+    "fa-triangle-exclamation": "info",
+    "fa-hammer": "hammer"
+  };
+  const key = aliases[name] || name;
   const paths = {
     wand: `<path d="m15 4 5 5-11 11-5-5 11-11Z"/><path d="m14 5 5 5"/><path d="M5 4v3M3.5 5.5h3M20 16v3M18.5 17.5h3M8 2l.7 1.7L10.5 4l-1.8.7L8 6.5l-.7-1.8L5.5 4l1.8-.7L8 2Z"/>`,
     spark: `<path d="M12 2l1.7 5.1L19 9l-5.3 1.9L12 16l-1.7-5.1L5 9l5.3-1.9L12 2Z"/><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8L19 14Z"/>`,
@@ -1158,6 +1403,16 @@ function icon(name) {
     plus: `<path d="M12 5v14M5 12h14"/>`,
     trash: `<path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15M10 11v6M14 11v6"/>`,
     link: `<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1.5-1.5"/>`,
+    power: `<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/>`,
+    "arrow-left": `<path d="M19 12H5M12 19l-7-7 7-7"/>`,
+    "file-import": `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M12 11v6M9 14l3 3 3-3"/>`,
+    "file-export": `<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M12 17v-6M9 14l3-3 3 3"/>`,
+    flask: `<path d="M9 2h6M10 2v6l-5 9a3 3 0 0 0 2.6 4.5h8.8A3 3 0 0 0 19 17l-5-9V2"/><path d="M7 16h10"/>`,
+    upload: `<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8 12 3 7 8M12 3v12"/>`,
+    "chevron-right": `<path d="m9 18 6-6-6-6"/>`,
+    pie: `<path d="M21 12a9 9 0 1 1-9-9v9Z"/><path d="M12 3a9 9 0 0 1 9 9h-9Z"/>`,
+    layers: `<path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/>`,
+    copy: `<rect x="9" y="9" width="11" height="11" rx="2"/><rect x="4" y="4" width="11" height="11" rx="2"/>`,
     sliders: `<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M2 14h4M10 8h4M18 16h4"/>`,
     info: `<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>`,
     radar: `<path d="M20 12a8 8 0 1 1-8-8"/><path d="M12 12 20 4M12 8a4 4 0 1 0 4 4"/>`,
@@ -1167,7 +1422,7 @@ function icon(name) {
     book: `<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15Z"/>`,
     hammer: `<path d="m15 12 6 6-3 3-6-6M14 4l6 6M4 14l7-7 3 3-7 7H4v-3Z"/>`
   };
-  return `<svg class="meg-svg meg-${escapeHtml(name)}" viewBox="0 0 24 24" aria-hidden="true">${paths[name] || paths.spark}</svg>`;
+  return `<svg class="meg-svg meg-${escapeHtml(name)}" viewBox="0 0 24 24" aria-hidden="true">${paths[key] || paths.spark}</svg>`;
 }
 function styles() {
   return `
@@ -1180,29 +1435,31 @@ function styles() {
 .meg-float-btn .meg-wand path:nth-child(2) { stroke:#38bdf8; stroke-width:2.6; }
 .meg-float-btn .meg-wand path:last-child { fill:#fbbf24; stroke:#fbbf24; }
 .meg-svg { width:16px; height:16px; flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
-.meg-overlay { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.72); backdrop-filter:blur(5px); font-family:Inter, ui-sans-serif, system-ui, sans-serif; color:#f4f4f5; }
-.ps-modern-modal.app-container { width:min(1146px, calc(100vw - 64px)); height:min(928px, calc(100dvh - 56px)); background:#18181b; border:1px solid #27272a; border-radius:18px; box-shadow:0 28px 70px rgba(0,0,0,.72); display:flex; position:relative; overflow:hidden; }
+.meg-overlay { --bg-panel:#18181b; --bg-main:#0e0e11; --border-color:#27272a; --text-main:#f4f4f5; --text-muted:#a1a1aa; --gold:#f59e0b; position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.72); backdrop-filter:blur(5px); font-family:Inter, ui-sans-serif, system-ui, sans-serif; color:#f4f4f5; }
+.ps-modern-modal.app-container { width:1050px; max-width:95vw; height:85vh; max-height:850px; background:var(--bg-panel); border:1px solid var(--border-color); border-radius:16px; box-shadow:0 25px 50px -12px rgba(0,0,0,.7); display:flex; flex-direction:column; position:relative; overflow:hidden; }
 .main-wrapper { flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
-.hero-banner { height:220px; width:100%; background-position:center 26%; background-size:cover; position:relative; display:flex; flex-direction:column; justify-content:space-between; flex-shrink:0; background-color:#111; }
-.hero-banner::before { content:""; position:absolute; inset:0; background:radial-gradient(circle at 75% 20%, rgba(245,158,11,.22), transparent 32%); pointer-events:none; }
-.hero-overlay { position:absolute; inset:0; background:linear-gradient(to right, rgba(0,0,0,.92) 0%, rgba(24,24,27,.48) 52%, rgba(24,24,27,.86) 100%); }
-.hero-overlay::after { content:""; position:absolute; inset:0; background:linear-gradient(to top, #18181b 0%, transparent 72%); }
-.top-app-bar { position:relative; z-index:2; padding:22px 32px; display:flex; justify-content:flex-end; }
+.hero-banner { height:200px; width:100%; background-position:center 25%; background-size:cover; position:relative; display:flex; flex-direction:column; justify-content:space-between; flex-shrink:0; background-color:#111; }
+.hero-banner::before { display:none; }
+.hero-overlay { position:absolute; inset:0; background:linear-gradient(to right, rgba(0,0,0,.9) 0%, rgba(24,24,27,.4) 50%, rgba(24,24,27,.8) 100%); }
+.hero-overlay::after { content:""; position:absolute; inset:0; background:linear-gradient(to top, var(--bg-panel) 0%, transparent 100%); }
+.top-app-bar { position:relative; z-index:2; padding:20px 30px; display:flex; justify-content:flex-end; }
 .app-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
 .live-token-count { color:#c9c9d2; background:rgba(26,26,31,.78); padding:10px 14px; border-radius:8px; border:1px solid rgba(255,255,255,.1); backdrop-filter:blur(6px); font-size:12px; font-weight:900; display:flex; gap:6px; align-items:center; box-shadow:0 10px 24px rgba(0,0,0,.28); }
 .ps-save-indicator { color:#a1a1aa; font-size:12px; font-weight:800; min-width:54px; }
 .ps-save-indicator.saving { color:#f59e0b; }
-.hero-content { position:relative; z-index:2; padding:0 32px 28px 110px; }
-.hero-content .status { font-size:12px; font-weight:900; color:#10b981; text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px; text-shadow:0 2px 4px rgba(0,0,0,.8); }
-.hero-content .name { font-size:40px; font-weight:900; margin:0; line-height:1.05; color:#fff; letter-spacing:0; text-shadow:0 4px 10px rgba(0,0,0,.8); }
-.hero-content p { margin:8px 0 0; color:#d4d4d8; font-size:14px; max-width:760px; text-shadow:0 2px 4px rgba(0,0,0,.7); }
-.dock { position:absolute; top:22px; bottom:22px; left:22px; width:64px; background:rgba(18,18,20,.58); backdrop-filter:blur(16px); border:1px solid rgba(255,255,255,.1); border-radius:13px; display:flex; flex-direction:column; align-items:center; padding:18px 0; gap:10px; overflow:hidden; z-index:50; }
-.dock-icon { display:grid; place-items:center; width:54px; height:54px; margin:0; padding:0; border:0; border-radius:11px; color:#a5a5ad; background:transparent; cursor:pointer; transition:.18s ease; }
-.dock-icon .meg-svg { width:21px; height:21px; }
-.dock-icon span { display:none; }
-.dock-icon:hover { color:#fff; background:rgba(255,255,255,.08); }
-.dock-icon.active { color:#111; background:#f59e0b; box-shadow:0 10px 24px rgba(245,158,11,.22); }
-.main-content { flex:1; padding:22px 44px 42px 110px; overflow:auto; background:#0e0e11; display:flex; flex-direction:column; gap:14px; }
+.hero-content { position:relative; z-index:2; padding:0 30px 25px 100px; }
+.hero-content .status { font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:1px; margin-bottom:5px; text-shadow:0 2px 4px rgba(0,0,0,.8); }
+.hero-content .name { font-size:2.2rem; font-weight:800; margin:0; line-height:1.1; color:#fff; letter-spacing:0; text-shadow:0 4px 10px rgba(0,0,0,.8); }
+.hero-content p { margin:8px 0 0; color:#d4d4d8; font-size:.84rem; max-width:760px; text-shadow:0 2px 4px rgba(0,0,0,.7); }
+.dock { position:absolute; top:20px; bottom:20px; left:20px; width:60px; background:rgba(18,18,20,.7); backdrop-filter:blur(15px); border:1px solid rgba(255,255,255,.1); border-radius:12px; display:flex; flex-direction:column; padding-top:15px; transition:width .3s cubic-bezier(.4,0,.2,1); overflow:hidden; white-space:nowrap; z-index:50; }
+.dock:hover { width:240px; box-shadow:10px 10px 40px rgba(0,0,0,.8); }
+.dock-icon { display:flex; align-items:center; width:240px; height:50px; padding:0 20px; color:#a1a1aa; cursor:pointer; transition:.2s; font-weight:600; font-size:.9rem; margin-bottom:5px; border:0; background:transparent; }
+.dock-icon .meg-svg { width:20px; height:20px; margin-right:15px; flex:0 0 20px; }
+.dock-icon span { opacity:0; transition:opacity .2s; pointer-events:none; display:inline; }
+.dock:hover .dock-icon span { opacity:1; transition-delay:.1s; }
+.dock-icon:hover { color:#fff; background:rgba(255,255,255,.1); border-radius:8px; margin-left:10px; width:220px; }
+.dock-icon.active { color:#f59e0b; background:rgba(245,158,11,.15); border-radius:8px; margin-left:10px; width:220px; box-shadow:none; }
+.main-content { flex:1; padding:10px 40px 40px 100px; overflow:auto; background:var(--bg-main); display:flex; flex-direction:column; gap:20px; }
 .main-content::-webkit-scrollbar { width:10px; }
 .main-content::-webkit-scrollbar-track { background:#0e0e11; }
 .main-content::-webkit-scrollbar-thumb { background:#3f3f46; border-radius:999px; border:2px solid #0e0e11; }
@@ -1220,35 +1477,39 @@ function styles() {
 .wstyle-gen-btn.purple-bg { background:linear-gradient(135deg,#a855f7,#7c3aed); color:#fff; }
 .wstyle-gen-btn.blue-bg { background:linear-gradient(135deg,#06b6d4,#0891b2); color:#fff; }
 .wstyle-gen-btn.green-bg { background:linear-gradient(135deg,#10b981,#059669); color:#03140e; }
-.mtab-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:28px; padding-bottom:24px; border-bottom:1px solid rgba(255,255,255,.08); }
+.mtab-header, .wstyle-header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:24px; padding-bottom:20px; border-bottom:1px solid var(--border-color); }
 .mtab-header-left { display:flex; align-items:center; gap:14px; min-width:0; }
-.mtab-header-icon { width:48px; height:48px; border-radius:13px; display:grid; place-items:center; background:linear-gradient(135deg,var(--header-color),color-mix(in srgb,var(--header-color) 72%,#000)); color:#fff; box-shadow:0 12px 28px rgba(0,0,0,.25); }
-.mtab-header-icon .meg-svg { width:24px; height:24px; }
-.mtab-header h2 { margin:0; font-size:24px; line-height:1.1; letter-spacing:0; }
-.mtab-header p { margin:5px 0 0; color:#a1a1aa; font-size:13px; }
-.mtab-header-badge { border:1px solid color-mix(in srgb,var(--badge-color) 38%,transparent); color:var(--badge-color); background:color-mix(in srgb,var(--badge-color) 14%,transparent); padding:8px 14px; border-radius:999px; font-size:12px; font-weight:900; display:flex; gap:6px; align-items:center; }
-.wstyle-filters { display:flex; flex-wrap:wrap; gap:16px; margin:20px 0 44px; padding:5px; border:1px solid #27272a; border-radius:13px; background:#111115; }
-.wstyle-filter-pill { border:0; background:transparent; color:#a1a1aa; border-radius:10px; padding:9px 20px; cursor:pointer; font-size:13px; font-weight:900; display:flex; align-items:center; gap:7px; }
+.wstyle-header-left { display:flex; align-items:center; gap:14px; min-width:0; }
+.mtab-header-icon, .wstyle-header-icon { width:44px; height:44px; border-radius:12px; display:grid; place-items:center; background:linear-gradient(135deg,var(--header-color,#a855f7),color-mix(in srgb,var(--header-color,#a855f7) 72%,#000)); color:#fff; box-shadow:0 4px 15px rgba(0,0,0,.2); }
+.wstyle-header-icon { background:linear-gradient(135deg,#a855f7,#6366f1); box-shadow:0 4px 15px rgba(168,85,247,.3); }
+.mtab-header-icon .meg-svg, .wstyle-header-icon .meg-svg { width:21px; height:21px; }
+.mtab-header h2, .wstyle-header h2 { margin:0; font-size:1.25rem; font-weight:800; line-height:1.1; letter-spacing:0; }
+.mtab-header p, .wstyle-header p { margin:2px 0 0; color:#a1a1aa; font-size:.78rem; }
+.mtab-header-badge, .wstyle-active-badge { border:1px solid color-mix(in srgb,var(--badge-color,#10b981) 38%,transparent); color:var(--badge-color,#10b981); background:color-mix(in srgb,var(--badge-color,#10b981) 14%,transparent); padding:7px 14px; border-radius:20px; font-size:.72rem; font-weight:800; display:flex; gap:6px; align-items:center; text-transform:uppercase; letter-spacing:.5px; white-space:nowrap; }
+.wstyle-active-badge.off { --badge-color:#a1a1aa; }
+.wstyle-filters { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:20px; padding:4px; border:1px solid var(--border-color); border-radius:12px; background:rgba(0,0,0,.2); }
+.wstyle-filter-pill { border:0; background:transparent; color:#a1a1aa; border-radius:10px; padding:8px 18px; cursor:pointer; font-size:.8rem; font-weight:700; display:flex; align-items:center; gap:6px; }
 .wstyle-filter-pill.active { color:#fff; background:#33343a; border-color:transparent; }
 .pill-count { border-radius:999px; padding:1px 7px; background:rgba(255,255,255,.14); }
-.wstyle-section-head { color:#d4d4d8; font-size:13px; font-weight:900; display:flex; align-items:center; gap:8px; margin:12px 0 0; }
+.wstyle-section-head { color:#d4d4d8; font-size:.72rem; font-weight:900; text-transform:uppercase; letter-spacing:1.5px; display:flex; align-items:center; gap:10px; margin:20px 0 12px; }
+.wstyle-section-head::after { content:""; flex:1; height:1px; background:linear-gradient(to right,var(--border-color),transparent); }
 .wstyle-section-head.gold { color:#f59e0b; }
 .wstyle-section-head.green { color:#10b981; }
 .wstyle-section-head.purple { color:#a855f7; }
 .wstyle-section-head.blue { color:#38bdf8; }
 .wstyle-section-head.red { color:#ef4444; }
-.mtab-card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; }
-.mtab-card-grid.compact { grid-template-columns:repeat(auto-fill,minmax(188px,1fr)); }
-.mtab-eng-card { min-height:158px; position:relative; text-align:left; border:1px solid #27272a; border-radius:13px; background:#0d0d10; color:#f4f4f5; cursor:pointer; overflow:hidden; padding:0; display:flex; transition:transform .18s ease, border-color .18s ease, background .18s ease; }
-.mtab-eng-card:hover { transform:translateY(-2px); border-color:rgba(245,158,11,.55); background:#15161a; }
-.mtab-eng-card.active { border-color:#10b981; background:rgba(16,185,129,.09); box-shadow:0 0 0 1px rgba(16,185,129,.45) inset; }
+.mtab-card-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:14px; margin-bottom:20px; }
+.mtab-card-grid.compact { grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); }
+.mtab-eng-card { min-height:0; position:relative; text-align:left; border:1px solid var(--border-color); border-radius:14px; background:var(--bg-main); color:#f4f4f5; cursor:pointer; overflow:hidden; padding:0; display:flex; flex-direction:column; transition:all .25s cubic-bezier(.4,0,.2,1); }
+.mtab-eng-card:hover { transform:translateY(-2px); border-color:#52525b; box-shadow:0 8px 25px rgba(0,0,0,.35); }
+.mtab-eng-card.active { border-color:#10b981; background:rgba(16,185,129,.04); box-shadow:none; }
 .mtab-eng-card.active .ecard-title { color:#10b981; }
 .mtab-eng-card.locked-card { opacity:.55; cursor:not-allowed; }
 .ecard-accent { position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,var(--accent,#27272a),transparent); }
 .mtab-eng-card.active .ecard-accent { background:linear-gradient(90deg,#10b981,#059669,transparent); }
-.ecard-body { padding:20px; display:flex; flex-direction:column; gap:8px; width:100%; }
-.ecard-title { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; color:#fff; font-size:15px; font-weight:900; line-height:1.25; }
-.ecard-desc { color:#a1a1aa; font-size:12px; line-height:1.45; display:block; }
+.ecard-body { padding:16px 18px; display:flex; flex-direction:column; gap:6px; width:100%; }
+.ecard-title { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; color:#fff; font-size:.95rem; font-weight:800; line-height:1.25; }
+.ecard-desc { color:#a1a1aa; font-size:.78rem; line-height:1.5; display:block; }
 .badge-row { display:flex; flex-wrap:wrap; gap:6px; margin-top:auto; }
 .ecard-badge { display:inline-flex; align-items:center; gap:4px; font-size:10px; font-weight:900; border-radius:999px; padding:4px 7px; color:#a1a1aa; background:rgba(255,255,255,.06); }
 .ecard-badge.rec { color:#f59e0b; background:rgba(245,158,11,.12); }
@@ -1257,7 +1518,7 @@ function styles() {
 .ecard-badge.active-badge { color:#10b981; background:rgba(16,185,129,.15); }
 .mtab-card-list { display:flex; flex-direction:column; gap:8px; }
 .mtab-card-list.dashed { min-height:64px; padding:12px; border:1px dashed #27272a; border-radius:8px; background:rgba(0,0,0,.12); }
-.mtab-toggle-row { width:100%; display:flex; justify-content:space-between; align-items:center; gap:18px; border:1px solid #27272a; border-radius:8px; background:#101114; color:#f4f4f5; padding:14px 16px; cursor:pointer; text-align:left; transition:.18s ease; }
+.mtab-toggle-row { width:100%; display:flex; justify-content:space-between; align-items:center; gap:16px; border:1px solid var(--border-color); border-radius:14px; background:var(--bg-main); color:#f4f4f5; padding:16px 20px; cursor:pointer; text-align:left; transition:all .25s ease; }
 .mtab-toggle-row:hover { border-color:rgba(245,158,11,.45); background:#15161a; }
 .mtab-toggle-row.active { border-color:#f59e0b; background:rgba(245,158,11,.035); }
 .toggle-info { display:flex; flex-direction:column; gap:4px; min-width:0; }
@@ -1338,6 +1599,71 @@ pre { white-space:pre-wrap; color:#d4d4d8; margin:0; padding:12px; border-top:1p
 .custom-engine-row { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px; border:1px solid #27272a; border-radius:8px; background:#101114; margin-bottom:8px; }
 .custom-engine-row div { display:flex; flex-direction:column; gap:3px; }
 .custom-engine-row span { color:#a1a1aa; font-size:12px; }
+.dev-full { grid-column:1 / -1; }
+.wstyle-list { display:flex; flex-direction:column; gap:10px; }
+.wstyle-card { position:relative; display:flex; flex-direction:column; background:var(--bg-main); border:1px solid var(--border-color); border-radius:14px; overflow:hidden; cursor:pointer; transition:all .25s cubic-bezier(.4,0,.2,1); color:var(--text-main); text-align:left; }
+.wstyle-card:hover { border-color:#52525b; transform:translateY(-2px); box-shadow:0 8px 25px rgba(0,0,0,.4); }
+.wstyle-card.active { border-color:#10b981; background:rgba(16,185,129,.04); }
+.wstyle-card .card-accent { height:3px; width:100%; background:linear-gradient(90deg,var(--border-color),transparent); }
+.wstyle-card.active .card-accent { background:linear-gradient(90deg,#10b981,#059669); }
+.wstyle-card .card-body { padding:16px 18px; display:flex; flex-direction:column; gap:8px; }
+.wstyle-card .card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.wstyle-card .card-title { font-weight:800; font-size:.9rem; color:var(--text-main); display:flex; gap:6px; align-items:center; }
+.wstyle-card .card-desc { display:block; font-size:.76rem; color:var(--text-muted); line-height:1.45; margin-top:3px; }
+.wstyle-card .card-rule { font-size:.72rem; color:#d4d4d8; line-height:1.45; padding:10px; background:rgba(0,0,0,.22); border:1px solid rgba(255,255,255,.06); border-radius:8px; max-height:96px; overflow:hidden; }
+.card-status { font-size:.62rem; font-weight:900; padding:3px 10px; border-radius:8px; text-transform:uppercase; letter-spacing:.5px; display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.active-status { color:#10b981; background:rgba(16,185,129,.15); }
+.wstyle-off-card { width:100%; display:flex; align-items:center; justify-content:space-between; border:1px solid var(--border-color); border-radius:14px; background:var(--bg-main); padding:16px 18px; color:var(--text-main); cursor:pointer; text-align:left; margin-bottom:14px; }
+.wstyle-off-card.active { border-color:#10b981; background:rgba(16,185,129,.04); }
+.wstyle-off-card.locked-card { opacity:.72; cursor:not-allowed; border-color:rgba(59,130,246,.3); }
+.off-left { display:flex; align-items:center; gap:12px; }
+.off-left strong { display:block; font-size:.9rem; }
+.off-left small { display:block; color:var(--text-muted); font-size:.75rem; margin-top:2px; }
+.off-icon { width:36px; height:36px; border-radius:10px; display:grid; place-items:center; background:rgba(161,161,170,.12); color:#a1a1aa; }
+.off-icon.blue { background:rgba(59,130,246,.18); color:#3b82f6; }
+.wstyle-dnr-header { display:flex; justify-content:space-between; align-items:center; gap:12px; cursor:pointer; }
+.dnr-info { display:flex; align-items:center; gap:12px; }
+.dnr-info strong { display:block; font-size:.9rem; }
+.dnr-info small { display:block; color:var(--text-muted); font-size:.73rem; margin-top:2px; }
+.dnr-icon { width:34px; height:34px; border-radius:10px; display:grid; place-items:center; background:rgba(245,158,11,.13); color:var(--gold); }
+.ps-toggle-card { border:1px solid var(--border-color); border-radius:10px; background:transparent; padding:8px; min-width:56px; display:flex; justify-content:center; cursor:pointer; }
+.wstyle-dnr-body { display:none; padding-top:15px; margin-top:12px; border-top:1px dashed var(--border-color); }
+.wstyle-dnr-body.open { display:block; }
+.wstyle-dnr-slider-track { display:flex; align-items:center; gap:12px; }
+.wstyle-dnr-slider-track input { flex:1; }
+.wstyle-dnr-label { color:var(--text-muted); font-size:.72rem; white-space:nowrap; }
+.wstyle-dnr-label.dial { color:#3b82f6; }
+.wstyle-dnr-label.narr { color:var(--gold); }
+.dnr-preview { font-size:.7rem; color:var(--text-muted); text-align:center; margin-top:10px; font-family:ui-monospace,Consolas,monospace; opacity:.78; }
+.wstyle-gen-card, .wstyle-create-card { display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid var(--border-color); border-radius:14px; background:var(--bg-main); padding:16px 18px; color:var(--text-main); cursor:pointer; text-align:left; }
+.wstyle-create-card { justify-content:center; border-style:dashed; color:#10b981; font-weight:800; }
+.gen-info { display:flex; flex-direction:column; gap:3px; }
+.gen-title { font-weight:800; }
+.gen-desc { color:var(--text-muted); font-size:.76rem; line-height:1.35; }
+.wstyle-editor-bar { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:10px; margin-bottom:12px; }
+.wstyle-info-callout { display:flex; gap:10px; margin-top:12px; color:#c4b5fd; background:rgba(168,85,247,.08); border:1px solid rgba(168,85,247,.18); border-radius:8px; padding:12px; font-size:.78rem; }
+.workflow-row { margin-top:12px; }
+.lora-slot { border:1px solid var(--border-color); border-radius:8px; padding:12px; background:rgba(0,0,0,.16); }
+.npc-list { display:flex; flex-direction:column; gap:10px; }
+.npc-card { border:1px solid var(--border-color); border-radius:12px; background:var(--bg-main); overflow:hidden; }
+.npc-card[open] .npc-chevron { transform:rotate(90deg); }
+.npc-card-header { list-style:none; display:flex; align-items:center; gap:12px; padding:12px 14px; cursor:pointer; }
+.npc-card-header::-webkit-details-marker { display:none; }
+.npc-chevron { color:var(--text-muted); transition:.2s; display:grid; place-items:center; }
+.npc-mini-pfp { width:34px; height:34px; border-radius:8px; object-fit:cover; border:1px solid var(--border-color); background:#0e0e11; display:grid; place-items:center; color:var(--gold); font-weight:900; }
+.npc-card-title { display:flex; flex-direction:column; gap:2px; flex:1; }
+.npc-card-title small { color:var(--text-muted); font-size:.72rem; }
+.npc-card-body { display:grid; grid-template-columns:180px minmax(0,1fr); gap:16px; padding:14px; border-top:1px solid var(--border-color); }
+.npc-pfp-container { display:flex; flex-direction:column; gap:8px; align-items:stretch; }
+.npc-pfp-container img, .npc-pfp-container > span { width:160px; height:240px; border-radius:10px; border:1px solid var(--border-color); object-fit:cover; background:#0e0e11; display:grid; place-items:center; color:var(--gold); font-size:48px; font-weight:900; }
+.npc-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
+.npc-field-section { border:1px solid rgba(255,255,255,.06); border-radius:8px; padding:10px; background:rgba(0,0,0,.16); }
+.npc-field-section strong { color:#fff; font-size:.78rem; }
+.npc-field-section p { color:var(--text-muted); font-size:.76rem; line-height:1.4; margin:6px 0 0; }
+.mem-progress-container { width:100%; height:12px; background:rgba(0,0,0,.4); border-radius:6px; overflow:hidden; display:flex; margin-top:10px; border:1px solid var(--border-color); }
+.mem-legend { display:flex; justify-content:space-between; color:var(--text-muted); font-size:.68rem; margin-top:6px; text-transform:uppercase; letter-spacing:.5px; }
+.green-text { color:#10b981 !important; border-color:rgba(16,185,129,.3) !important; }
+.blue-text { color:#3b82f6 !important; border-color:rgba(59,130,246,.3) !important; }
 .meg-inline-image { margin-top:10px; border:1px solid #27272a; background:#111; border-radius:8px; overflow:hidden; max-width:420px; }
 .meg-inline-image img { display:block; width:100%; height:auto; }
 .meg-inline-image div { padding:10px; display:flex; flex-direction:column; gap:4px; }
@@ -1366,5 +1692,6 @@ pre { white-space:pre-wrap; color:#d4d4d8; margin:0; padding:12px; border-top:1p
 }`;
 }
 export {
-  setup
+  setup,
+  MEGUMIN_PARITY_LABELS
 };
