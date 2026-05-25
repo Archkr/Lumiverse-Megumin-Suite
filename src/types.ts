@@ -67,12 +67,14 @@ export interface MemoryChunk {
   timestamp: number;
 }
 
+export type UtilityBackend = "direct" | "preset";
+
 export interface MemoryCoreSettings {
   enabled: boolean;
   architecture: "raw_short_long" | "raw_long";
   workingLimit: number;
   shortTermLimit: number;
-  backend: "direct";
+  backend: UtilityBackend;
   scannerEngine: "tfidf" | "semantic";
   triggerMode: "manual" | "frequency";
   autoFreq: number;
@@ -82,7 +84,7 @@ export interface MemoryCoreSettings {
 
 export interface ImageGenSettings {
   enabled: boolean;
-  generatorBackend: "direct";
+  generatorBackend: UtilityBackend;
   connectionId: string;
   selectedModel: string;
   selectedSampler: string;
@@ -113,7 +115,7 @@ export interface ImageGenSettings {
 
 export interface StoryPlanSettings {
   enabled: boolean;
-  backend: "direct";
+  backend: UtilityBackend;
   triggerMode: "manual" | "frequency";
   autoFreq: number;
   currentPlan: string;
@@ -145,7 +147,7 @@ export interface MeguminProfile {
   userLanguage: string;
   userPronouns: "off" | "male" | "female";
   banList: string[];
-  banListBackend: "direct";
+  banListBackend: UtilityBackend;
   thinkEffort: "unspecified" | "100" | "250" | "450" | "custom";
   customThinkEffort: string;
   thinkingV2: boolean;

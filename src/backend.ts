@@ -7,6 +7,7 @@ import { patchComfyWorkflow } from "./image-workflow";
 declare const spindle: any;
 
 const CUSTOM_ENGINES_PATH = "custom-engines.json";
+const PRESET_BRIDGE_PATH = "preset-bridge.json";
 const DEFAULT_HERO_ASSETS = ["img/default.png", "img/default1.png", "img/default2.png", "img/default3.png"];
 const SYNCABLE_PROFILE_KEYS = new Set([
   "mode",
@@ -36,6 +37,14 @@ const SYNCABLE_PROFILE_KEYS = new Set([
 ]);
 let utilityBypassDepth = 0;
 
+type PresetKind = "engine" | "image";
+
+type PresetBridgeState = {
+  enginePresetId?: string;
+  imagePresetId?: string;
+  updatedAt?: number;
+};
+
 async function readJson<T>(path: string, fallback: T): Promise<T> {
   try {
     const raw = await spindle.storage.read(path);
@@ -59,6 +68,111 @@ async function getCustomEngines(): Promise<EngineMode[]> {
 
 async function saveCustomEngines(engines: EngineMode[]): Promise<void> {
   await writeJson(CUSTOM_ENGINES_PATH, engines);
+}
+
+async function hasPresetAccess(): Promise<boolean> {
+  try {
+    return !spindle.permissions?.has || await spindle.permissions.has("presets");
+  } catch {
+    return false;
+  }
+}
+
+function presetStateKey(kind: PresetKind): keyof PresetBridgeState {
+  return kind === "engine" ? "enginePresetId" : "imagePresetId";
+}
+
+function presetName(kind: PresetKind): string {
+  return kind === "engine" ? "Megumin Engine Preset" : "Megumin Image Preset";
+}
+
+function presetBlockContent(kind: PresetKind): string {
+  if (kind === "image") {
+    return [
+      "You are Megumin Suite's image prompt generator.",
+      "Convert the latest roleplay scene into a concise, vivid image prompt.",
+      "Return only the image prompt. Do not add commentary, markdown, XML, or surrounding quotes.",
+      "Prioritize visible characters, pose, expression, location, lighting, camera framing, and art-medium tags when requested."
+    ].join("\n");
+  }
+  return [
+    "You are Megumin Suite's utility generation engine.",
+    "Follow the user's requested utility task exactly.",
+    "Return only the requested payload with no assistant commentary, greetings, markdown fences, or apologies.",
+    "Preserve roleplay continuity, avoid writing actions or thoughts for the user character, and stay grounded in the provided transcript."
+  ].join("\n");
+}
+
+async function findMeguminPreset(kind: PresetKind, userId?: string): Promise<any | null> {
+  if (!await hasPresetAccess()) return null;
+  const state = await readJson<PresetBridgeState>(PRESET_BRIDGE_PATH, {});
+  const knownId = state[presetStateKey(kind)];
+  if (knownId) {
+    try {
+      const preset = await spindle.presets.get(knownId, userId);
+      if (preset) return preset;
+    } catch {
+      // Fall through to list lookup.
+    }
+  }
+  const listed = await spindle.presets.list({ limit: 200, userId });
+  const targetName = presetName(kind);
+  return (listed?.data || []).find((preset: any) =>
+    preset?.metadata?.megumin_suite?.kind === kind ||
+    String(preset?.name || "").trim().toLowerCase() === targetName.toLowerCase()
+  ) || null;
+}
+
+async function ensureMeguminPreset(kind: PresetKind, userId?: string): Promise<any> {
+  if (!await hasPresetAccess()) throw new Error("Megumin preset mode requires the presets permission.");
+  const state = await readJson<PresetBridgeState>(PRESET_BRIDGE_PATH, {});
+  let preset = await findMeguminPreset(kind, userId);
+  if (!preset) {
+    preset = await spindle.presets.create({
+      name: presetName(kind),
+      provider: "loom",
+      engine: "classic",
+      parameters: {},
+      prompt_order: [],
+      prompts: {},
+      metadata: {
+        description: `${presetName(kind)} managed by Megumin Suite.`,
+        megumin_suite: { kind, version: 1 }
+      }
+    }, userId);
+  }
+
+  const blocks = await spindle.presets.blocks.list(preset.id, userId);
+  const blockName = kind === "engine" ? "Megumin Utility Engine" : "Megumin Image Prompt Engine";
+  const existing = (blocks || []).find((block: any) => block?.name === blockName);
+  const input = {
+    name: blockName,
+    content: presetBlockContent(kind),
+    role: "system",
+    position: "pre_history",
+    enabled: true,
+    marker: null,
+    isLocked: false,
+    color: kind === "engine" ? "#f59e0b" : "#06b6d4",
+    injectionTrigger: []
+  };
+  if (existing?.id) await spindle.presets.blocks.update(preset.id, existing.id, input, userId);
+  else await spindle.presets.blocks.create(preset.id, input, { index: 0, userId });
+
+  state[presetStateKey(kind)] = preset.id;
+  state.updatedAt = Date.now();
+  await writeJson(PRESET_BRIDGE_PATH, state);
+  return preset;
+}
+
+async function presetBridgeStatus(userId?: string): Promise<{ available: boolean; enginePresetId?: string; imagePresetId?: string }> {
+  const available = await hasPresetAccess();
+  if (!available) return { available: false };
+  const [engine, image] = await Promise.all([
+    findMeguminPreset("engine", userId).catch(() => null),
+    findMeguminPreset("image", userId).catch(() => null)
+  ]);
+  return { available: true, enginePresetId: engine?.id, imagePresetId: image?.id };
 }
 
 async function loadProfile(scope: string): Promise<MeguminProfile> {
@@ -214,10 +328,20 @@ async function getMessages(chatId: string | null): Promise<ChatMessage[]> {
   }
 }
 
-async function generateQuiet(messages: Array<{ role: "system" | "user" | "assistant"; content: string }>): Promise<string> {
+async function generateQuiet(
+  messages: Array<{ role: "system" | "user" | "assistant"; content: string }>,
+  options: { backend?: "direct" | "preset"; presetKind?: PresetKind; userId?: string } = {}
+): Promise<string> {
   utilityBypassDepth += 1;
   try {
-    const result = await spindle.generate.quiet({ messages });
+    const input: Record<string, unknown> = { messages };
+    if (options.backend === "preset" && options.presetKind) {
+      const preset = await ensureMeguminPreset(options.presetKind, options.userId);
+      input.presetId = preset.id;
+      input.preset_id = preset.id;
+      input.force_preset_id = true;
+    }
+    const result = await spindle.generate.quiet(input);
     return cleanAIOutput(String(result?.content || result || ""));
   } finally {
     utilityBypassDepth = Math.max(0, utilityBypassDepth - 1);
@@ -274,7 +398,7 @@ async function processMemory(scope: string, chatId: string): Promise<MeguminProf
         content: "You are an expert narrative condenser. Summarize important story events and meaningful dialogue. Remove flowery prose and trivial motion. Do not quote dialogue unless necessary."
       },
       { role: "user", content: `Summarize this chat chunk clearly:\n\n<chat>\n${text}\n</chat>` }
-    ]);
+    ], { backend: mem.backend, presetKind: "engine" });
     mem.shortTermChunks.push({ id, startIndex, endIndex, summary, timestamp: Date.now() });
     archivedIds.add(id);
   }
@@ -376,7 +500,7 @@ async function generateImageForChat(scope: string, chatId: string, prompt: strin
   return { imageId: result?.imageId, imageUrl: result?.imageUrl, prompt };
 }
 
-async function generateImagePromptFromChat(profile: MeguminProfile, messages: ChatMessage[]): Promise<string> {
+async function generateImagePromptFromChat(profile: MeguminProfile, messages: ChatMessage[], userId?: string): Promise<string> {
   const chatText = cleanedTranscript(messages, 10);
   const style = profile.imageGen.promptStyle === "illustrious"
     ? "Use Danbooru-style tags separated by commas. Focus on anime art style."
@@ -397,7 +521,7 @@ async function generateImagePromptFromChat(profile: MeguminProfile, messages: Ch
       role: "user",
       content: `Chat:\n${chatText}\n\nStyle: ${style}\nPerspective: ${perspective}\nExtra: ${profile.imageGen.promptExtra || "None"}`
     }
-  ]);
+  ], { backend: profile.imageGen.generatorBackend, presetKind: "image", userId });
 }
 
 async function handlePostGeneration(chatId: string): Promise<void> {
@@ -439,7 +563,8 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
         engines: allEngines(await getCustomEngines()),
         customEngines: await getCustomEngines(),
         imageConnections,
-        uiAssets: await loadUiAssets(context)
+        uiAssets: await loadUiAssets(context),
+        presetBridge: await presetBridgeStatus(userId)
       };
     }
     case "profile:save": {
@@ -477,7 +602,7 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
       const plan = await generateQuiet([
         { role: "system", content: "You are an expert story architect. Brainstorm medium-to-long-term plot developments. Do not write actions, thoughts, or dialogue for the user character." },
         { role: "user", content: `Create at least 10 future arc/chapter/episode possibilities from this story:\n\n${cleanedTranscript(messages, 60)}` }
-      ]);
+      ], { backend: profile.storyPlan.backend, presetKind: "engine", userId });
       profile.storyPlan.currentPlan = plan;
       profile.storyPlan.enabled = true;
       return { profile: await saveProfile(context.scope, profile), plan };
@@ -489,7 +614,7 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
       const analysis = await generateQuiet([
         { role: "system", content: "Identify the 5 most repetitive cliche or overused stylistic patterns. Return only short generalized rules separated by commas." },
         { role: "user", content: cleanedTranscript(messages.filter((message) => message.role === "assistant"), 50) }
-      ]);
+      ], { backend: profile.banListBackend, presetKind: "engine", userId });
       const phrases = analysis.split(/[,\n-]+/).map((item) => item.trim().replace(/^["']|["']$/g, "")).filter((item) => item.length > 3);
       for (const phrase of phrases) if (!profile.banList.includes(phrase)) profile.banList.push(phrase);
       return { profile: await saveProfile(context.scope, profile), added: phrases };
@@ -511,7 +636,7 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
       const prompt = await generateQuiet([
         { role: "system", content: "You are an expert image prompt engineer specializing in character portraits. Return only the image prompt." },
         { role: "user", content: `Create a portrait prompt from this NPC dossier:\n\n${npcBuildText(npc)}` }
-      ]);
+      ], { backend: profile.imageGen.generatorBackend, presetKind: "image", userId });
       const image = await generateImageForChat(context.scope, context.chatId, prompt);
       npc.pfpImageId = image.imageId;
       npc.pfpImageUrl = image.imageUrl;
@@ -525,11 +650,18 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
       if (!context.chatId) throw new Error("Open a chat before generating an image");
       const profile = await loadProfile(context.scope);
       const messages = await getMessages(context.chatId);
-      const prompt = String((payload.payload as any)?.prompt || "").trim() || await generateImagePromptFromChat(profile, messages);
+      const prompt = String((payload.payload as any)?.prompt || "").trim() || await generateImagePromptFromChat(profile, messages, userId);
       const target = lastAssistant(messages);
       const image = await generateImageForChat(context.scope, context.chatId, prompt, target?.id);
       return { image };
     }
+    case "preset:ensureBridge": {
+      const kind = ((payload.payload as any)?.kind === "image" ? "image" : "engine") as PresetKind;
+      const preset = await ensureMeguminPreset(kind, userId);
+      return { presetBridge: await presetBridgeStatus(userId), preset };
+    }
+    case "preset:status":
+      return { presetBridge: await presetBridgeStatus(userId) };
     default:
       throw new Error(`Unknown Megumin RPC: ${payload.type}`);
   }

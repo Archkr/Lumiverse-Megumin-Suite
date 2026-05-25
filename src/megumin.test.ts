@@ -8,6 +8,8 @@ import { DEFAULT_PROFILE } from "./defaults";
 import type { ChatContext, ChatMessage, LlmMessage, MemoryChunk } from "./types";
 
 const frontendSource = readFileSync(new URL("./frontend.ts", import.meta.url), "utf8");
+const backendSource = readFileSync(new URL("./backend.ts", import.meta.url), "utf8");
+const spindleManifest = JSON.parse(readFileSync(new URL("../spindle.json", import.meta.url), "utf8")) as { permissions: string[] };
 
 const context: ChatContext = {
   chatId: "chat_test",
@@ -20,7 +22,7 @@ const context: ChatContext = {
 };
 
 describe("Megumin UI parity audit", () => {
-  test("keeps ST tab copy and removes Lumiverse/preset-only UI wording", () => {
+  test("keeps ST tab copy, gated panels, and preset bridge wording", () => {
     const requiredLabels = [
       "Choose the core ruleset that drives all NPC behavior and world logic.",
       "Define the personality and extra toggles.",
@@ -33,7 +35,15 @@ describe("Megumin UI parity audit", () => {
       "Dialogue / Narration Ratio",
       "ComfyUI Server & Workflow",
       "Send Portraits to AI",
-      "Context Allocation Dashboard"
+      "Context Allocation Dashboard",
+      "Requires V6",
+      "Cinematic Sounds",
+      "Important:",
+      "Megumin Engine Preset",
+      "Megumin Image Preset",
+      "id=\"ig_main_content\"",
+      "id=\"npc_main_content\"",
+      "id=\"mem_main_content\""
     ];
     for (const label of requiredLabels) expect(frontendSource).toContain(label);
 
@@ -42,11 +52,13 @@ describe("Megumin UI parity audit", () => {
       "tracker is injected",
       "Scan Last Message",
       "Lumiverse quiet generation",
-      "Megumin Engine Preset",
-      "Megumin Image Preset",
       "Preset-specific Main 3"
     ];
     for (const label of forbiddenLabels) expect(frontendSource).not.toContain(label);
+
+    expect(spindleManifest.permissions).toContain("presets");
+    expect(backendSource).toContain("preset:ensureBridge");
+    expect(backendSource).toContain("force_preset_id");
   });
 });
 

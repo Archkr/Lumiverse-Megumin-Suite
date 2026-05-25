@@ -3374,6 +3374,7 @@ function patchComfyWorkflow(connection, profile, prompt) {
 
 // src/backend.ts
 var CUSTOM_ENGINES_PATH = "custom-engines.json";
+var PRESET_BRIDGE_PATH = "preset-bridge.json";
 var DEFAULT_HERO_ASSETS = ["img/default.png", "img/default1.png", "img/default2.png", "img/default3.png"];
 var SYNCABLE_PROFILE_KEYS = new Set([
   "mode",
@@ -3421,6 +3422,105 @@ async function getCustomEngines() {
 }
 async function saveCustomEngines(engines) {
   await writeJson(CUSTOM_ENGINES_PATH, engines);
+}
+async function hasPresetAccess() {
+  try {
+    return !spindle.permissions?.has || await spindle.permissions.has("presets");
+  } catch {
+    return false;
+  }
+}
+function presetStateKey(kind) {
+  return kind === "engine" ? "enginePresetId" : "imagePresetId";
+}
+function presetName(kind) {
+  return kind === "engine" ? "Megumin Engine Preset" : "Megumin Image Preset";
+}
+function presetBlockContent(kind) {
+  if (kind === "image") {
+    return [
+      "You are Megumin Suite's image prompt generator.",
+      "Convert the latest roleplay scene into a concise, vivid image prompt.",
+      "Return only the image prompt. Do not add commentary, markdown, XML, or surrounding quotes.",
+      "Prioritize visible characters, pose, expression, location, lighting, camera framing, and art-medium tags when requested."
+    ].join(`
+`);
+  }
+  return [
+    "You are Megumin Suite's utility generation engine.",
+    "Follow the user's requested utility task exactly.",
+    "Return only the requested payload with no assistant commentary, greetings, markdown fences, or apologies.",
+    "Preserve roleplay continuity, avoid writing actions or thoughts for the user character, and stay grounded in the provided transcript."
+  ].join(`
+`);
+}
+async function findMeguminPreset(kind, userId) {
+  if (!await hasPresetAccess())
+    return null;
+  const state = await readJson(PRESET_BRIDGE_PATH, {});
+  const knownId = state[presetStateKey(kind)];
+  if (knownId) {
+    try {
+      const preset = await spindle.presets.get(knownId, userId);
+      if (preset)
+        return preset;
+    } catch {}
+  }
+  const listed = await spindle.presets.list({ limit: 200, userId });
+  const targetName = presetName(kind);
+  return (listed?.data || []).find((preset) => preset?.metadata?.megumin_suite?.kind === kind || String(preset?.name || "").trim().toLowerCase() === targetName.toLowerCase()) || null;
+}
+async function ensureMeguminPreset(kind, userId) {
+  if (!await hasPresetAccess())
+    throw new Error("Megumin preset mode requires the presets permission.");
+  const state = await readJson(PRESET_BRIDGE_PATH, {});
+  let preset = await findMeguminPreset(kind, userId);
+  if (!preset) {
+    preset = await spindle.presets.create({
+      name: presetName(kind),
+      provider: "loom",
+      engine: "classic",
+      parameters: {},
+      prompt_order: [],
+      prompts: {},
+      metadata: {
+        description: `${presetName(kind)} managed by Megumin Suite.`,
+        megumin_suite: { kind, version: 1 }
+      }
+    }, userId);
+  }
+  const blocks = await spindle.presets.blocks.list(preset.id, userId);
+  const blockName = kind === "engine" ? "Megumin Utility Engine" : "Megumin Image Prompt Engine";
+  const existing = (blocks || []).find((block) => block?.name === blockName);
+  const input = {
+    name: blockName,
+    content: presetBlockContent(kind),
+    role: "system",
+    position: "pre_history",
+    enabled: true,
+    marker: null,
+    isLocked: false,
+    color: kind === "engine" ? "#f59e0b" : "#06b6d4",
+    injectionTrigger: []
+  };
+  if (existing?.id)
+    await spindle.presets.blocks.update(preset.id, existing.id, input, userId);
+  else
+    await spindle.presets.blocks.create(preset.id, input, { index: 0, userId });
+  state[presetStateKey(kind)] = preset.id;
+  state.updatedAt = Date.now();
+  await writeJson(PRESET_BRIDGE_PATH, state);
+  return preset;
+}
+async function presetBridgeStatus(userId) {
+  const available = await hasPresetAccess();
+  if (!available)
+    return { available: false };
+  const [engine, image] = await Promise.all([
+    findMeguminPreset("engine", userId).catch(() => null),
+    findMeguminPreset("image", userId).catch(() => null)
+  ]);
+  return { available: true, enginePresetId: engine?.id, imagePresetId: image?.id };
 }
 async function loadProfile(scope) {
   const globalProfile = await readJson(profilePath("global"), DEFAULT_PROFILE);
@@ -3571,10 +3671,17 @@ async function getMessages(chatId) {
     return [];
   }
 }
-async function generateQuiet(messages) {
+async function generateQuiet(messages, options = {}) {
   utilityBypassDepth += 1;
   try {
-    const result = await spindle.generate.quiet({ messages });
+    const input = { messages };
+    if (options.backend === "preset" && options.presetKind) {
+      const preset = await ensureMeguminPreset(options.presetKind, options.userId);
+      input.presetId = preset.id;
+      input.preset_id = preset.id;
+      input.force_preset_id = true;
+    }
+    const result = await spindle.generate.quiet(input);
     return cleanAIOutput(String(result?.content || result || ""));
   } finally {
     utilityBypassDepth = Math.max(0, utilityBypassDepth - 1);
@@ -3630,7 +3737,7 @@ async function processMemory(scope, chatId) {
 <chat>
 ${text}
 </chat>` }
-    ]);
+    ], { backend: mem.backend, presetKind: "engine" });
     mem.shortTermChunks.push({ id, startIndex, endIndex, summary, timestamp: Date.now() });
     archivedIds.add(id);
   }
@@ -3729,7 +3836,7 @@ ${tag}`.trim(),
   }
   return { imageId: result?.imageId, imageUrl: result?.imageUrl, prompt };
 }
-async function generateImagePromptFromChat(profile, messages) {
+async function generateImagePromptFromChat(profile, messages, userId) {
   const chatText = cleanedTranscript(messages, 10);
   const style = profile.imageGen.promptStyle === "illustrious" ? "Use Danbooru-style tags separated by commas. Focus on anime art style." : profile.imageGen.promptStyle === "sdxl" ? "Use natural, descriptive prose. Focus on photorealism." : "Use a comma-separated list of detailed keywords and visual descriptors.";
   const perspective = profile.imageGen.promptPerspective === "pov" ? "First-person POV." : profile.imageGen.promptPerspective === "character" ? "Focus on character appearance and expression." : "Focus on the whole scene and environment.";
@@ -3747,7 +3854,7 @@ Style: ${style}
 Perspective: ${perspective}
 Extra: ${profile.imageGen.promptExtra || "None"}`
     }
-  ]);
+  ], { backend: profile.imageGen.generatorBackend, presetKind: "image", userId });
 }
 async function handlePostGeneration(chatId) {
   const context = await getChatContext(chatId);
@@ -3787,7 +3894,8 @@ async function rpc(payload, userId) {
         engines: allEngines(await getCustomEngines()),
         customEngines: await getCustomEngines(),
         imageConnections,
-        uiAssets: await loadUiAssets(context)
+        uiAssets: await loadUiAssets(context),
+        presetBridge: await presetBridgeStatus(userId)
       };
     }
     case "profile:save": {
@@ -3831,7 +3939,7 @@ async function rpc(payload, userId) {
         { role: "user", content: `Create at least 10 future arc/chapter/episode possibilities from this story:
 
 ${cleanedTranscript(messages, 60)}` }
-      ]);
+      ], { backend: profile.storyPlan.backend, presetKind: "engine", userId });
       profile.storyPlan.currentPlan = plan;
       profile.storyPlan.enabled = true;
       return { profile: await saveProfile(context.scope, profile), plan };
@@ -3844,7 +3952,7 @@ ${cleanedTranscript(messages, 60)}` }
       const analysis = await generateQuiet([
         { role: "system", content: "Identify the 5 most repetitive cliche or overused stylistic patterns. Return only short generalized rules separated by commas." },
         { role: "user", content: cleanedTranscript(messages.filter((message) => message.role === "assistant"), 50) }
-      ]);
+      ], { backend: profile.banListBackend, presetKind: "engine", userId });
       const phrases = analysis.split(/[,\n-]+/).map((item) => item.trim().replace(/^["']|["']$/g, "")).filter((item) => item.length > 3);
       for (const phrase of phrases)
         if (!profile.banList.includes(phrase))
@@ -3874,7 +3982,7 @@ ${cleanedTranscript(messages, 60)}` }
         { role: "user", content: `Create a portrait prompt from this NPC dossier:
 
 ${npcBuildText(npc)}` }
-      ]);
+      ], { backend: profile.imageGen.generatorBackend, presetKind: "image", userId });
       const image = await generateImageForChat(context.scope, context.chatId, prompt);
       npc.pfpImageId = image.imageId;
       npc.pfpImageUrl = image.imageUrl;
@@ -3889,11 +3997,18 @@ ${npcBuildText(npc)}` }
         throw new Error("Open a chat before generating an image");
       const profile = await loadProfile(context.scope);
       const messages = await getMessages(context.chatId);
-      const prompt = String(payload.payload?.prompt || "").trim() || await generateImagePromptFromChat(profile, messages);
+      const prompt = String(payload.payload?.prompt || "").trim() || await generateImagePromptFromChat(profile, messages, userId);
       const target = lastAssistant(messages);
       const image = await generateImageForChat(context.scope, context.chatId, prompt, target?.id);
       return { image };
     }
+    case "preset:ensureBridge": {
+      const kind = payload.payload?.kind === "image" ? "image" : "engine";
+      const preset = await ensureMeguminPreset(kind, userId);
+      return { presetBridge: await presetBridgeStatus(userId), preset };
+    }
+    case "preset:status":
+      return { presetBridge: await presetBridgeStatus(userId) };
     default:
       throw new Error(`Unknown Megumin RPC: ${payload.type}`);
   }

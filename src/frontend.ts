@@ -1,4 +1,72 @@
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
+import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
+import {
+  faAddressBook,
+  faArrowLeft,
+  faBan,
+  faBolt,
+  faBook,
+  faBookOpen,
+  faBrain,
+  faChartGantt,
+  faCheck,
+  faChevronRight,
+  faCircleCheck,
+  faCircleInfo,
+  faCircleXmark,
+  faCode,
+  faCopy,
+  faCubes,
+  faDatabase,
+  faDiagramProject,
+  faEarthAmericas,
+  faFileExport,
+  faFileImport,
+  faFireBurner,
+  faFlask,
+  faFloppyDisk,
+  faGaugeHigh,
+  faGears,
+  faImage,
+  faLanguage,
+  faLayerGroup,
+  faLightbulb,
+  faList,
+  faLock,
+  faMagnifyingGlass,
+  faMap,
+  faMapLocationDot,
+  faMasksTheater,
+  faMemory,
+  faMicrochip,
+  faPen,
+  faPenNib,
+  faPlug,
+  faPlus,
+  faPlusCircle,
+  faPowerOff,
+  faPuzzlePiece,
+  faRotateLeft,
+  faRotateRight,
+  faSatelliteDish,
+  faScaleBalanced,
+  faScroll,
+  faServer,
+  faSliders,
+  faSpinner,
+  faStar,
+  faToggleOn,
+  faTrashCan,
+  faTriangleExclamation,
+  faUnlock,
+  faUpRightAndDownLeftFromCenter,
+  faUpload,
+  faUser,
+  faUserAstronaut,
+  faUsers,
+  faWandMagicSparkles,
+  faXmark
+} from "@fortawesome/free-solid-svg-icons";
 import type { EngineMode, MeguminProfile, RpcResponse } from "./types";
 import { DEFAULT_PROFILE, clone, mergeProfile } from "./defaults";
 import { KAZUMA_PLACEHOLDERS, RESOLUTIONS } from "./image-data";
@@ -11,6 +79,7 @@ type AppState = {
   saving: boolean;
   activeTab: number;
   devMode: boolean;
+  styleEditorId: string | null;
   engineFilter: string;
   styleFilter: string;
   context: any;
@@ -20,6 +89,7 @@ type AppState = {
   customEngines: EngineMode[];
   imageConnections: any[];
   uiAssets: { heroImages: string[]; groupImage?: string; mascotImage?: string };
+  presetBridge: { available: boolean; enginePresetId?: string; imagePresetId?: string };
   status: string;
 };
 
@@ -37,6 +107,7 @@ const state: AppState = {
   saving: false,
   activeTab: 0,
   devMode: false,
+  styleEditorId: null,
   engineFilter: "all",
   styleFilter: "direct",
   context: null,
@@ -46,6 +117,7 @@ const state: AppState = {
   customEngines: [],
   imageConnections: [],
   uiAssets: { heroImages: [] },
+  presetBridge: { available: false },
   status: "Loading..."
 };
 
@@ -145,6 +217,7 @@ async function bootstrap() {
   state.customEngines = data.customEngines || [];
   state.imageConnections = data.imageConnections || [];
   state.uiAssets = data.uiAssets || { heroImages: [] };
+  state.presetBridge = data.presetBridge || { available: false };
   state.ready = true;
   state.status = "Ready";
   render();
@@ -239,6 +312,7 @@ function wire(container: HTMLElement) {
   container.querySelectorAll<HTMLElement>("[data-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       state.devMode = false;
+      state.styleEditorId = null;
       state.activeTab = Number(button.dataset.tab || 0);
       render();
     });
@@ -295,6 +369,7 @@ async function handleAction(el: HTMLElement) {
     if (action === "close") return closeApp();
     if (action === "open-dev") {
       state.devMode = !state.devMode;
+      state.styleEditorId = null;
       render();
       return;
     }
@@ -337,6 +412,21 @@ async function handleAction(el: HTMLElement) {
       render();
       return;
     }
+    if (action === "style-create") {
+      state.styleEditorId = "__new";
+      render();
+      return;
+    }
+    if (action === "style-edit") {
+      state.styleEditorId = el.dataset.value || "__new";
+      render();
+      return;
+    }
+    if (action === "style-back") {
+      state.styleEditorId = null;
+      render();
+      return;
+    }
     if (action === "style-direct") {
       const style = [...(state.logic?.directStyles || []), ...(state.profile.customStyles || [])].find((item: any) => item.id === el.dataset.value);
       if (style) {
@@ -359,12 +449,28 @@ async function handleAction(el: HTMLElement) {
     }
     if (action === "style-save-custom") {
       const name = ((root().querySelector("#style-name") as HTMLInputElement)?.value || "Custom AI Style").trim();
-      const rule = state.profile.aiRule.trim();
+      const notes = ((root().querySelector("#style-notes") as HTMLTextAreaElement)?.value || "").trim();
+      const rule = ((root().querySelector("#style-rule") as HTMLTextAreaElement)?.value || state.profile.aiRule).trim();
       if (!rule) throw new Error("Write or generate a rule before saving");
-      const id = `custom_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || Date.now()}`;
+      const id = state.styleEditorId && state.styleEditorId !== "__new"
+        ? state.styleEditorId
+        : `custom_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || Date.now()}`;
       const existing = (state.profile.customStyles || []).filter((style) => style.id !== id);
-      state.profile.customStyles = [...existing, { id, name, rule, notes: "" }];
+      state.profile.customStyles = [...existing, { id, name, rule, notes }];
       state.profile.activeStyleId = id;
+      state.profile.aiRule = rule;
+      state.styleEditorId = null;
+      saveProfileSoon();
+      render();
+      return;
+    }
+    if (action === "style-delete") {
+      const id = el.dataset.value || "";
+      state.profile.customStyles = (state.profile.customStyles || []).filter((style) => style.id !== id);
+      if (state.profile.activeStyleId === id) {
+        state.profile.activeStyleId = null;
+        state.profile.aiRule = "";
+      }
       saveProfileSoon();
       render();
       return;
@@ -421,6 +527,13 @@ async function handleAction(el: HTMLElement) {
     if (action === "image-test") return runTask("Testing ComfyUI connection...", "image:connections");
     if (action === "image-workflow-noop") {
       state.status = "Workflow settings are saved";
+      render();
+      return;
+    }
+    if (action === "preset-ensure") {
+      const data = await request<any>("preset:ensureBridge", { kind: el.dataset.kind || "engine" });
+      state.presetBridge = data.presetBridge || state.presetBridge;
+      state.status = "Preset ready";
       render();
       return;
     }
@@ -595,6 +708,7 @@ function renderPersona(): string {
 }
 
 function renderStyle(): string {
+  if (state.styleEditorId) return renderStyleEditor();
   const directStyles = state.logic?.directStyles || [];
   const templates = state.logic?.styleTemplates || [];
   const filter = ["all", "precooked", "custom", "generators"].includes(state.styleFilter) ? state.styleFilter : "all";
@@ -604,7 +718,7 @@ function renderStyle(): string {
   const existingNames = customStyles.map((style) => style.name);
   const genTemplates = templates.filter((template: any) => !existingNames.includes(template.name));
   const activeName = state.profile.activeStyleId
-    ? directStyles.find((item: any) => item.id === state.profile.activeStyleId)?.name || "Custom"
+    ? directStyles.find((item: any) => item.id === state.profile.activeStyleId)?.name || customStyles.find((item) => item.id === state.profile.activeStyleId)?.name || "Custom"
     : state.profile.aiRule ? "Custom Rule" : "No Style Active";
   return `
     <div class="wstyle-header">
@@ -635,15 +749,9 @@ function renderStyle(): string {
       ${stylePill("generators", "AI Generators", genTemplates.length, "fa-wand-magic-sparkles")}
     </div>
     ${filter === "all" || filter === "precooked" ? `<div class="style-section"><div class="wstyle-section-head gold">${icon("fa-fire-burner")} Precooked Styles</div><div class="wstyle-list">${directStyles.map((style: any) => styleCard(style.name, style.desc, style.rule, state.profile.activeStyleId === style.id, "style-direct", style.id)).join("")}</div></div>` : ""}
-    ${filter === "all" || filter === "custom" ? `<div class="style-section"><div class="wstyle-section-head green">${icon("fa-book")} My Library</div><div class="wstyle-list">${customStyles.map((style) => styleCard(style.name, style.notes || "Custom AI style.", style.rule, state.profile.activeStyleId === style.id, "style-direct", style.id)).join("")}<button type="button" class="wstyle-create-card" data-action="style-filter" data-value="custom">${icon("fa-plus")} Create Custom AI Style</button></div></div>` : ""}
+    ${filter === "all" || filter === "custom" ? `<div class="style-section"><div class="wstyle-section-head green">${icon("fa-book")} My Library</div><div class="wstyle-list">${customStyles.map((style) => styleCardWithActions(style.name, style.notes || "Custom AI style.", style.rule, state.profile.activeStyleId === style.id, style.id)).join("")}<button type="button" class="wstyle-create-card" data-action="style-create">${icon("fa-plus")} Create Custom AI Style</button></div></div>` : ""}
     ${filter === "all" || filter === "generators" ? `<div class="style-section"><div class="wstyle-section-head purple">${icon("fa-wand-magic-sparkles")} AI Style Generators</div><div class="mtab-card-grid">${genTemplates.map((template: any, index: number) => `<button type="button" class="wstyle-gen-card" data-action="style-template" data-index="${index}"><span class="gen-info"><span class="gen-title">${escapeHtml(template.name)}</span><span class="gen-desc">${escapeHtml((template.notes || (template.tags || []).join(", ")).slice(0, 180))}</span></span><span class="wstyle-gen-btn">${icon("fa-bolt")} Generate</span></button>`).join("")}</div></div>` : ""}
-    <div class="wstyle-section-head purple">${icon("fa-pen-nib")} Create Custom AI Style</div>
-    <div class="mtab-panel">
-      <div class="wstyle-editor-bar"><input id="style-name" class="ps-modern-input" placeholder="Name your style..."><button class="ps-modern-btn secondary" type="button" data-action="style-save-custom">${icon("fa-save")} Save</button><button class="ps-modern-btn secondary" type="button">${icon("fa-arrow-left")} Back</button></div>
-      <div class="panel-heading-row"><div class="mtab-panel-title purple">${icon("fa-scroll")} Generated Rule</div><button class="wstyle-gen-btn" type="button">${icon("fa-bolt")} Generate Writing Rule</button></div>
-      <textarea class="ps-modern-input textarea-xl" data-bind="aiRule" placeholder="Select tags above and click Generate...">${escapeHtml(state.profile.aiRule)}</textarea>
-      <div class="wstyle-info-callout">${icon("fa-circle-info")}<span>After generating or editing your rule, hit <strong>Save</strong> in the toolbar above to apply it to your library.</span></div>
-    </div>`;
+    `;
 }
 
 function renderGlobalSettings(): string {
@@ -651,7 +759,7 @@ function renderGlobalSettings(): string {
   return `
     ${tabHeader("Global Settings", "Toggle add-ons, set output preferences, and configure extras.", "fa-puzzle-piece", "#3b82f6", `${state.profile.addons.length} Active`, "#3b82f6", "fa-toggle-on")}
     <div class="wstyle-section-head blue">${icon("fa-puzzle-piece")} Gameplay Add-ons</div>
-    <div class="mtab-card-grid">${addons.map((item: any) => moduleCard(item, state.profile.addons.includes(item.id), "addons")).join("")}</div>
+    <div class="mtab-card-grid">${addons.map((item: any) => addonCard(item)).join("")}${cinematicSoundsCard()}</div>
     <div class="mtab-panel">
       <div class="mtab-panel-title blue">${icon("fa-earth-americas")} Extra</div>
       ${toggleGeneric(`${icon("fa-magnifying-glass")} Prompt Payload Preview`, "toggles.promptPreview", !!state.profile.toggles.promptPreview, "Show a popup of the final constructed prompt right before it is sent to the AI. only enable if you know what you doing it maybe buggy.", true)}
@@ -659,8 +767,6 @@ function renderGlobalSettings(): string {
       <div class="mtab-setting-row">${settingText("Target Word Count", "Leave empty for no limit")}${inputField("", "userWordCount", state.profile.userWordCount, "e.g. 400", "number")}</div>
       <div class="mtab-setting-row">${settingText("Language Output", "Leave empty for default (English)")}${inputField("", "userLanguage", state.profile.userLanguage, "e.g. Arabic, French...")}</div>
       <div class="mtab-setting-row">${settingText("User Gender", "Ensure the AI addresses you correctly")}${selectField("", "userPronouns", state.profile.userPronouns, [["off", "Off"], ["male", "Male (Him/He)"], ["female", "Female (Her/She)"]])}</div>
-      ${toggleGeneric("Cinematic Sounds", "onomatopoeia.enabled", state.profile.onomatopoeia.enabled, "Force the AI to use precise phonetic sound words (e.g., click, thud) instead of abstract descriptions.")}
-      ${state.profile.onomatopoeia.enabled ? toggleGeneric("Animate Sounds", "onomatopoeia.useStyling", state.profile.onomatopoeia.useStyling, "Wrap in HTML tags. For capable AI only.") : ""}
     </div>`;
 }
 
@@ -692,6 +798,7 @@ function renderThinking(): string {
     ${state.profile.thinkEffort === "custom" ? `<div class="mtab-panel">${inputField("Custom Word Count", "customThinkEffort", state.profile.customThinkEffort, "100", "number")}</div>` : ""}
     ${toggleGeneric(`${icon("fa-brain")} Gemini Thinking`, "thinkingV2", state.profile.thinkingV2, "Enable only for Gemini. When enabled, you MUST add <think> and </think> to the Reasoning Formatting prefix/suffix. Note: Enable Prefill ONLY if using Gemini models.", true)}
     <div class="wstyle-section-head purple">${icon("fa-diagram-project")} Thinking Framework</div>
+    <div class="mtab-callout gold">${icon("fa-triangle-exclamation")} <span><strong>Important:</strong> When using GLM or DS4 models, you must disable "Main 3" and enable "Main 3 DS4 + GLM" in the Megumin Suite preset.</span></div>
     <div class="mtab-card-grid">
       ${cotFrameworks(currentType, currentLang).map((item) => infoCard({ title: item.label, sub: item.desc, active: currentType === item.id, action: "select", path: "model", value: item.value, badge: item.isNew ? "New" : "" })).join("")}
     </div>
@@ -705,7 +812,7 @@ function renderStory(): string {
     ${toggleGeneric(`${icon("fa-map-location-dot")} Enable Story Planner`, "storyPlan.enabled", sp.enabled, "Just enable and hit generate plan now and let the ai do the rest.", true)}
     <div class="mtab-panel" style="display:${sp.enabled ? "block" : "none"};">
       <div class="mtab-panel-title gold">${icon("fa-gears")} Engine Settings</div>
-      <div class="mtab-setting-row">${settingText("Generation Backend", "")}${selectField("", "storyPlan.backend", sp.backend, [["direct", "Direct API Call (Fast)"]])}</div>
+      <div class="mtab-setting-row">${settingText("Generation Backend", "")}${selectField("", "storyPlan.backend", sp.backend, presetBackendOptions("engine"))}</div>
       <div class="mtab-setting-row">${settingText("Auto-Trigger Mode", "Generate new plans automatically.")}${selectField("", "storyPlan.triggerMode", sp.triggerMode, [["manual", "Manual Only"], ["frequency", "Every X Replies"]])}</div>
       ${sp.triggerMode === "frequency" ? `<div class="mtab-setting-row">${settingText("Every X Replies", "")}${inputField("", "storyPlan.autoFreq", String(sp.autoFreq), "10", "number")}</div>` : ""}
     </div>
@@ -726,7 +833,7 @@ function renderBanList(): string {
         <div class="mtab-panel-title purple">${icon("fa-radar")} AI Slop Detector</div>
         <button class="wstyle-gen-btn purple-bg" type="button" data-action="ban-analyze">${icon("fa-radar")} Analyze Chat</button>
       </div>
-      <div class="mtab-setting-row">${settingText("Generator Backend", "Choose how to generate the analysis.")}${selectField("", "banListBackend", state.profile.banListBackend, [["direct", "Direct API Call (Fast)"]])}</div>
+      <div class="mtab-setting-row">${settingText("Generator Backend", "Choose how to generate the analysis.")}${selectField("", "banListBackend", state.profile.banListBackend, presetBackendOptions("engine"))}</div>
     </div>
     <div class="mtab-panel" style="margin-bottom:16px;">
       <div class="mtab-panel-title red">${icon("fa-plus-circle")} Add Phrase</div>
@@ -756,8 +863,9 @@ function renderImage(): string {
     ${toggleGeneric("Enable Image Generation", "imageGen.enabled", ig.enabled, "Activate ComfyUI integration for this specific character/group.")}
     <div class="mtab-panel">
       <div class="mtab-panel-title blue">${icon("fa-wand-magic-sparkles")} Prompt Generator Backend</div>
-      <div class="mtab-setting-row">${settingText("Generation Method", "\"Direct\" is faster. \"Megumin Image\" is more creative.")}${selectField("", "imageGen.generatorBackend", ig.generatorBackend, [["direct", "Direct API Call (Fast)"]])}</div>
+      <div class="mtab-setting-row">${settingText("Generation Method", "\"Direct\" is faster. \"Megumin Image\" is more creative.")}${selectField("", "imageGen.generatorBackend", ig.generatorBackend, presetBackendOptions("image"))}</div>
     </div>
+    <div id="ig_main_content" style="display:${ig.enabled ? "block" : "none"};">
     <div class="mtab-panel">
       <div class="mtab-panel-title blue">${icon("fa-plug")} ComfyUI Server & Workflow</div>
       <div class="mtab-setting-row">${settingText("Connection", "Select the ComfyUI-capable image connection.")}${selectField("", "imageGen.connectionId", ig.connectionId, [["", "Default"], ...state.imageConnections.map((c): [string, string] => [String(c.id), `${c.name} (${c.provider})`])])}</div>
@@ -768,7 +876,7 @@ function renderImage(): string {
       <div class="mtab-panel-title gold">${icon("fa-sliders")} Triggers & Formatting</div>
       <div class="mtab-setting-row">${settingText("Trigger Mode", "")}${selectField("", "imageGen.triggerMode", ig.triggerMode, [["always", "Always (Every Reply)"], ["frequency", "After X Replies"], ["conditional", "Only when character sends a pic"], ["manual", "Manual Button Only"]])}</div>
       ${ig.triggerMode === "frequency" ? `<div class="mtab-setting-row">${settingText("Every X Replies", "")}${inputField("", "imageGen.autoGenFreq", String(ig.autoGenFreq), "1", "number")}</div>` : ""}
-      ${toggleGeneric("Preview Prompt Before Sending", "imageGen.previewPrompt", ig.previewPrompt, "Preview the prompt before sending it to ComfyUI.")}
+      ${toggleGeneric("Preview Prompt Before Sending", "imageGen.previewPrompt", ig.previewPrompt, "Show a popup to view or edit the AI's prompt before rendering.")}
       <div class="setting-grid">${selectField("Model Style Format", "imageGen.promptStyle", ig.promptStyle, [["standard", "Standard"], ["illustrious", "Illustrious / Pony Tags"], ["sdxl", "SDXL Natural Prose"]])}${selectField("Camera Perspective", "imageGen.promptPerspective", ig.promptPerspective, [["scene", "Cinematic Scene"], ["pov", "First Person POV"], ["character", "Character Portrait"]])}</div>
       ${inputField("Extra Instructions...", "imageGen.promptExtra", ig.promptExtra, "moody lighting, dark atmosphere...")}
     </div>
@@ -803,19 +911,22 @@ function renderImage(): string {
     <details class="mtab-panel">
       <summary class="mtab-panel-title blue">${icon("fa-code")} ComfyUI Field Placeholders</summary>
       <div class="placeholder-grid">${KAZUMA_PLACEHOLDERS.map((item) => `<div><code>${escapeHtml(item.key)}</code><span>${escapeHtml(item.desc)}</span></div>`).join("")}</div>
-    </details>`;
+    </details>
+    </div>`;
 }
 
 function renderNpc(): string {
   const bank = state.profile.npcBank;
   return `
-    ${tabHeader("NPCs Bank", "Automatically extract and track significant NPCs in the story.", "fa-address-book", "#f43f5e", `${bank.npcs.length} NPCs`, "#f43f5e", "fa-users")}
+    ${tabHeader("NPCs Bank", "Automatically extract and track significant NPCs in the story.", "fa-address-book", "#f43f5e", bank.enabled ? "Enabled" : "Disabled", bank.enabled ? "#10b981" : "#a1a1aa", bank.enabled ? "fa-circle-check" : "fa-circle-xmark")}
     <div class="mtab-panel">
       ${toggleGeneric("Enable NPC Bank", "npcBank.enabled", bank.enabled, "When enabled, the AI generates detailed dossiers for new NPCs, which are saved here and injected when relevant.")}
       ${toggleGeneric("Send Portraits to AI", "npcBank.sendPortraitsToAi", bank.sendPortraitsToAi, "If an injected NPC has a portrait, send the image to the AI to help it visualize the character.")}
     </div>
+    <div id="npc_main_content" style="display:${bank.enabled ? "block" : "none"};">
     <div class="panel-heading-row"><div class="wstyle-section-head red">${icon("fa-address-book")} Saved NPCs <span class="pill-count">${bank.npcs.length}</span></div><button class="ps-modern-btn secondary danger mini" type="button" data-action="npc-clear">${icon("fa-trash-can")} Clear All</button></div>
-    ${bank.npcs.length ? `<div class="npc-list">${bank.npcs.map(renderNpcCard).join("")}</div>` : emptyWithMascot("No NPCs saved yet.", "Dossiers appear here after Megumin extracts them from assistant replies.")}`;
+    ${bank.npcs.length ? `<div class="npc-list">${bank.npcs.map(renderNpcCard).join("")}</div>` : emptyWithMascot("No NPCs saved yet.", "Dossiers appear here after Megumin extracts them from assistant replies.")}
+    </div>`;
 }
 
 function renderNpcCard(npc: any): string {
@@ -852,18 +963,20 @@ function renderMemory(): string {
   return `
     ${tabHeader("Memory Core", "3-Tier Context Management: Working, Short-Term, and Long-Term Vector DB.", "fa-memory", "#10b981", mem.enabled ? "Enabled" : "Disabled", mem.enabled ? "#10b981" : "#a1a1aa", mem.enabled ? "fa-circle-check" : "fa-circle-xmark")}
     ${toggleGeneric("Enable Memory Core", "memoryCore.enabled", mem.enabled, "Archiving happens silently in the background. Old messages fade in the UI and are replaced in the prompt with injected summaries.")}
+    <div id="mem_main_content" style="display:${mem.enabled ? "block" : "none"};">
     <div class="mtab-panel">
-      <div class="panel-heading-row"><div class="mtab-panel-title green">${icon("fa-chart-pie")} Context Allocation Dashboard</div><span class="mtab-header-badge" style="--badge-color:#a855f7;">~${estimateTokensSaved()} Tokens Saved</span></div>
+      <div class="panel-heading-row"><div class="mtab-panel-title green">${icon("fa-chart-gantt")} Context Allocation Dashboard</div><span class="mtab-header-badge" style="--badge-color:#a855f7;">~${estimateTokensSaved()} Tokens Saved</span></div>
       <div class="mem-progress-container"><span class="mem-prog-working" style="width:${workingPct}%"></span><span class="mem-prog-short" style="width:${shortPct}%"></span><span class="mem-prog-long" style="width:${vaultPct}%"></span></div>
       <div class="mem-legend"><span>Working</span><span>Pend Short</span><span>Short</span><span>Pend Vault</span><span>Vault</span></div>
       <div class="mtab-callout green">${icon("fa-spinner")} <span>Monitoring Chat History...</span></div>
     </div>
     <div class="mtab-panel">
-      <div class="mtab-panel-title blue">${icon("fa-gears")} Extraction Engine Settings</div>
+      <div class="mtab-panel-title gold">${icon("fa-gears")} Extraction Engine Settings</div>
       <div class="mtab-callout gold">${icon("fa-circle-info")} <span><strong>How to Use:</strong> Set limits, then use Apply & Extract Pending to archive older turns into Short-Term summaries and the Long-Term Vault.</span></div>
       <div class="setting-grid">
         ${selectField("Memory Architecture", "memoryCore.architecture", mem.architecture, [["raw_short_long", "Raw Text + Short-Term Summaries + Vault"], ["raw_long", "Raw Text + Vault Directly (Skip Summaries)"]])}
-        ${selectField("Scanner", "memoryCore.scannerEngine", mem.scannerEngine, [["tfidf", "TF-IDF Retrieval"], ["semantic", "Semantic Memory"]])}
+        ${selectField("Generator Backend", "memoryCore.backend", mem.backend, presetBackendOptions("engine"))}
+        ${selectField("Vault Scanner Engine", "memoryCore.scannerEngine", mem.scannerEngine, [["tfidf", "TF-IDF Retrieval"], ["semantic", "Semantic Memory"]])}
         ${inputField("Working Limit", "memoryCore.workingLimit", String(mem.workingLimit), "30", "number")}
         ${inputField("Short-Term Limit", "memoryCore.shortTermLimit", String(mem.shortTermLimit), "70", "number")}
         ${selectField("Auto-Trigger Mode", "memoryCore.triggerMode", mem.triggerMode, [["manual", "Manual"], ["frequency", "Every X Replies"]])}
@@ -879,6 +992,7 @@ function renderMemory(): string {
       <div class="panel-heading-row"><div class="mtab-panel-title blue">${icon("fa-database")} Long-Term Vault</div><div class="mtab-btn-row"><button class="ps-modern-btn secondary mini blue-text" type="button" data-action="memory-test-vector">${icon("fa-vial")} Test Scanner</button><button class="ps-modern-btn secondary danger mini" type="button" data-action="memory-clear-vault">${icon("fa-trash-can")} Clear All</button></div></div>
       <input class="ps-modern-input" placeholder="Search vault...">
       ${(mem.longTermVault || []).slice(-20).reverse().map((chunk) => memoryAccordion(chunk)).join("") || `<span class="empty-text">No vault entries yet.</span>`}
+    </div>
     </div>`;
 }
 
@@ -908,6 +1022,43 @@ function renderDev(): string {
         <div class="mtab-panel-title green">${icon("fa-cubes")} Custom Engines</div>
         ${state.customEngines.length ? state.customEngines.map((engine) => `<div class="custom-engine-row"><div><strong>${escapeHtml(engine.label || engine.id)}</strong><span>${escapeHtml(engine.id)}</span></div><button class="icon-btn danger" type="button" data-action="dev-delete" data-id="${escapeHtml(engine.id)}">${icon("fa-trash-can")}</button></div>`).join("") : emptyWithMascot("No custom engines yet.", "Create one on the left, then select it from Core Engines.")}
       </div>
+    </div>`;
+}
+
+function renderStyleEditor(): string {
+  const existing = state.styleEditorId && state.styleEditorId !== "__new"
+    ? (state.profile.customStyles || []).find((style) => style.id === state.styleEditorId)
+    : null;
+  const name = existing?.name || "";
+  const notes = existing?.notes || "";
+  const rule = existing?.rule || state.profile.aiRule || "";
+  return `
+    <div class="wstyle-header">
+      <div class="wstyle-header-left">
+        <div class="wstyle-header-icon">${icon("fa-pen-nib")}</div>
+        <div><h2>${existing ? "Edit Custom AI Style" : "Create Custom AI Style"}</h2><p>Apply a prebuilt style, generate one with AI, or build your own.</p></div>
+      </div>
+      <div class="mtab-btn-row">
+        <button class="ps-modern-btn primary" type="button" data-action="style-save-custom">${icon("fa-floppy-disk")} Save</button>
+        <button class="ps-modern-btn secondary" type="button" data-action="style-back">${icon("fa-arrow-left")} Back</button>
+      </div>
+    </div>
+    <div class="wstyle-editor-bar">
+      <input id="style-name" class="ps-modern-input" value="${escapeHtml(name)}" placeholder="Name your style...">
+      <button class="ps-modern-btn secondary" type="button">${icon("fa-wand-magic-sparkles")} Load Template</button>
+      <button class="ps-modern-btn secondary" type="button">${icon("fa-lightbulb")} Generate Insights</button>
+    </div>
+    <div class="wstyle-insights-panel">
+      <div class="mtab-panel-title purple">${icon("fa-sparkles")} Style Notes / Insights</div>
+      <textarea id="style-notes" class="ps-modern-input" placeholder="Describe the style, scene texture, pacing, sentence shape, or motifs you want Megumin to learn.">${escapeHtml(notes)}</textarea>
+    </div>
+    <div class="wstyle-rule-panel">
+      <div class="panel-heading-row">
+        <div class="mtab-panel-title purple">${icon("fa-scroll")} Generated Rule</div>
+        <button class="wstyle-gen-btn" type="button">${icon("fa-bolt")} Generate Writing Rule</button>
+      </div>
+      <textarea id="style-rule" class="ps-modern-input textarea-xl" placeholder="Select tags above and click Generate...">${escapeHtml(rule)}</textarea>
+      <div class="wstyle-info-callout">${icon("fa-circle-info")}<span>After generating or editing your rule, hit <strong>Save</strong> in the toolbar above to apply it to your library.</span></div>
     </div>`;
 }
 
@@ -992,6 +1143,43 @@ function moduleCard(item: any, active: boolean, path: "addons" | "blocks"): stri
   </button>`;
 }
 
+function addonCard(item: any): string {
+  const active = state.profile.addons.includes(item.id);
+  const isV6Addon = item.id === "npc_events";
+  const v6Active = state.profile.mode.includes("v6");
+  const desc = moduleDesc(item.id) || strip(item.content).slice(0, 180);
+  const badges = [
+    active ? `<span class="ecard-badge active-badge">${icon("fa-check")} On</span>` : "",
+    item.recommended ? `<span class="ecard-badge rec">${icon("fa-star")} Recommended</span>` : "",
+    isV6Addon && !v6Active ? `<span class="ecard-badge locked">${icon("fa-lock")} Requires V6</span>` : "",
+    isV6Addon && v6Active ? `<span class="ecard-badge v6-active">${icon("fa-unlock")} V6 Active</span>` : ""
+  ].filter(Boolean).join("");
+  return `<button type="button" class="mtab-eng-card ${active ? "active" : ""}" data-action="toggle-array" data-path="addons" data-value="${escapeHtml(item.id)}">
+    <span class="ecard-accent"></span>
+    <span class="ecard-body">
+      <span class="ecard-title"><span>${escapeHtml(item.label)}</span>${badges ? `<span class="badge-row">${badges}</span>` : ""}</span>
+      <span class="ecard-desc">${escapeHtml(desc)}</span>
+    </span>
+  </button>`;
+}
+
+function cinematicSoundsCard(): string {
+  const active = state.profile.onomatopoeia.enabled;
+  return `<div class="mtab-eng-card ${active ? "active" : ""}">
+    <button type="button" class="ecard-body card-button-reset" data-action="toggle" data-path="onomatopoeia.enabled">
+      <span class="ecard-title"><span>Cinematic Sounds</span>${active ? `<span class="ecard-badge active-badge">${icon("fa-check")} On</span>` : ""}</span>
+      <span class="ecard-desc">Force the AI to use precise phonetic sound words (e.g., click, thud) instead of abstract descriptions.</span>
+    </button>
+    ${active ? `<div class="nested-toggle">${toggleGeneric("Animate Sounds", "onomatopoeia.useStyling", state.profile.onomatopoeia.useStyling, "Wrap in HTML tags. For capable AI only.")}</div>` : ""}
+  </div>`;
+}
+
+function presetBackendOptions(kind: "engine" | "image"): Array<[string, string]> {
+  return kind === "image"
+    ? [["direct", "Direct API Call (Fast)"], ["preset", "Megumin Image Preset"]]
+    : [["direct", "Direct API Call (Fast)"], ["preset", "Megumin Engine Preset"]];
+}
+
 function toggleGeneric(label: string, path: string, active: boolean, desc: string, rawLabel = false): string {
   return `<button type="button" class="mtab-toggle-row ${active ? "active" : ""}" data-action="toggle" data-path="${escapeHtml(path)}">
     <span class="toggle-info"><span class="toggle-label">${rawLabel ? label : escapeHtml(label)}</span>${desc ? `<span class="toggle-desc">${escapeHtml(desc).replace(/&amp;mdash;/g, "&mdash;")}</span>` : ""}</span>
@@ -1034,6 +1222,23 @@ function styleCard(title: string, desc: string, rule: string, active: boolean, a
       <span class="card-rule">${escapeHtml(strip(rule || "").slice(0, 360))}</span>
     </span>
   </button>`;
+}
+
+function styleCardWithActions(title: string, desc: string, rule: string, active: boolean, value: string): string {
+  return `<div class="wstyle-card ${active ? "active" : ""}">
+    <button type="button" class="card-button-reset" data-action="style-direct" data-value="${escapeHtml(value)}">
+      <span class="card-accent"></span>
+      <span class="card-body">
+        <span class="card-top"><span><span class="card-title">${escapeHtml(title)}</span><span class="card-desc">${escapeHtml(desc || "")}</span></span>${active ? `<span class="card-status active-status">${icon("fa-check")} Active</span>` : ""}</span>
+        <span class="card-rule">${escapeHtml(strip(rule || "").slice(0, 360))}</span>
+      </span>
+    </button>
+    <div class="card-actions">
+      <button type="button" class="ps-btn-edit" data-action="style-edit" data-value="${escapeHtml(value)}">${icon("fa-pen")} Edit</button>
+      <button type="button" class="act-regen ps-btn-regen">${icon("fa-rotate-right")} Redo</button>
+      <button type="button" class="act-delete ps-btn-delete" data-action="style-delete" data-value="${escapeHtml(value)}">${icon("fa-trash-can")} Delete</button>
+    </div>
+  </div>`;
 }
 
 function loraSlot(slot: number): string {
@@ -1241,7 +1446,109 @@ function renderMeguminImageTag(payload: any) {
   ctxRef.dom.inject(bubble, html, "beforeend");
 }
 
+const faLibrary: Record<string, IconDefinition> = {
+  faAddressBook,
+  faArrowLeft,
+  faBan,
+  faBolt,
+  faBook,
+  faBookOpen,
+  faBrain,
+  faChartGantt,
+  faCheck,
+  faChevronRight,
+  faCircleCheck,
+  faCircleInfo,
+  faCircleXmark,
+  faCode,
+  faCopy,
+  faCubes,
+  faDatabase,
+  faDiagramProject,
+  faEarthAmericas,
+  faFileExport,
+  faFileImport,
+  faFireBurner,
+  faFlask,
+  faFloppyDisk,
+  faGaugeHigh,
+  faGears,
+  faImage,
+  faLanguage,
+  faLayerGroup,
+  faLightbulb,
+  faList,
+  faLock,
+  faMagnifyingGlass,
+  faMap,
+  faMapLocationDot,
+  faMasksTheater,
+  faMemory,
+  faMicrochip,
+  faPen,
+  faPenNib,
+  faPlug,
+  faPlus,
+  faPlusCircle,
+  faPowerOff,
+  faPuzzlePiece,
+  faRotateLeft,
+  faRotateRight,
+  faSatelliteDish,
+  faScaleBalanced,
+  faScroll,
+  faServer,
+  faSliders,
+  faSpinner,
+  faStar,
+  faToggleOn,
+  faTrashCan,
+  faTriangleExclamation,
+  faUnlock,
+  faUpRightAndDownLeftFromCenter,
+  faUpload,
+  faUser,
+  faUserAstronaut,
+  faUsers,
+  faWandMagicSparkles,
+  faXmark
+};
+
+function iconExportName(name: string): string {
+  const normalizedAliases: Record<string, string> = {
+    wand: "fa-wand-magic-sparkles",
+    spark: "fa-wand-magic-sparkles",
+    check: "fa-check",
+    star: "fa-star",
+    lock: "fa-lock",
+    "fa-save": "fa-floppy-disk",
+    "fa-radar": "fa-satellite-dish",
+    "fa-vial": "fa-flask",
+    "fa-chart-pie": "fa-chart-gantt",
+    "fa-sparkles": "fa-wand-magic-sparkles"
+  };
+  const faName = normalizedAliases[name] || name;
+  const clean = faName.replace(/^fa-/, "");
+  return `fa${clean.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join("")}`;
+}
+
+function fontAwesomeIcon(name: string): string | null {
+  if (name === "wand") {
+    return `<i class="fa-solid fa-wand-magic-sparkles meg-fa meg-wand-wrap" aria-hidden="true"><svg class="meg-svg meg-wand" viewBox="0 0 24 24" focusable="false"><path d="m15 4 5 5-11 11-5-5 11-11Z"></path><path d="m14 5 5 5"></path><path d="M5 4v3M3.5 5.5h3M20 16v3M18.5 17.5h3M8 2l.7 1.7L10.5 4l-1.8.7L8 6.5l-.7-1.8L5.5 4l1.8-.7L8 2Z"></path></svg></i>`;
+  }
+  const def = faLibrary[iconExportName(name)] || faLibrary.faCircleInfo;
+  if (!def?.icon) return null;
+  const [width, height, , , pathData] = def.icon;
+  const paths = Array.isArray(pathData)
+    ? pathData.map((path) => `<path fill="currentColor" d="${path}"></path>`).join("")
+    : `<path fill="currentColor" d="${pathData}"></path>`;
+  const className = name.startsWith("fa-") ? name : iconExportName(name).replace(/[A-Z]/g, (letter, index) => `${index ? "-" : ""}${letter.toLowerCase()}`).replace(/^-/, "");
+  return `<i class="fa-solid ${escapeHtml(className)} meg-fa" aria-hidden="true"><svg class="meg-svg" viewBox="0 0 ${width} ${height}" focusable="false">${paths}</svg></i>`;
+}
+
 function icon(name: string): string {
+  const faIcon = fontAwesomeIcon(name);
+  if (faIcon) return faIcon;
   const aliases: Record<string, string> = {
     "fa-server": "server",
     "fa-user-astronaut": "masks",
@@ -1365,11 +1672,13 @@ function styles(): string {
 .meg-float { width:52px; height:52px; }
 .meg-float-btn { width:52px; height:52px; border-radius:14px; border:1px solid rgba(255,255,255,.12); background:#18181b; color:#f4f4f5; cursor:pointer; display:grid; place-items:center; box-shadow:0 16px 34px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.05); transition:transform .2s ease, background .2s ease, border-color .2s ease; }
 .meg-float-btn:hover { transform:translateY(-2px); background:#27272a; border-color:rgba(255,255,255,.22); }
-.meg-float-btn .meg-svg { width:30px; height:30px; color:#ffffff; filter:drop-shadow(0 2px 6px rgba(0,0,0,.45)); }
+.meg-float-btn .meg-fa { width:30px; height:30px; color:#ffffff; filter:drop-shadow(0 2px 6px rgba(0,0,0,.45)); }
+.meg-float-btn .meg-svg { width:30px; height:30px; }
 .meg-float-btn .meg-wand path:first-child { fill:#ffffff; stroke:#ffffff; }
 .meg-float-btn .meg-wand path:nth-child(2) { stroke:#38bdf8; stroke-width:2.6; }
 .meg-float-btn .meg-wand path:last-child { fill:#fbbf24; stroke:#fbbf24; }
-.meg-svg { width:16px; height:16px; flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.meg-fa { width:16px; height:16px; flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; line-height:1; }
+.meg-svg { width:16px; height:16px; flex:0 0 auto; fill:currentColor; stroke:none; }
 .meg-overlay { --bg-panel:#18181b; --bg-main:#0e0e11; --border-color:#27272a; --text-main:#f4f4f5; --text-muted:#a1a1aa; --gold:#f59e0b; position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.72); backdrop-filter:blur(5px); font-family:Inter, ui-sans-serif, system-ui, sans-serif; color:#f4f4f5; }
 .ps-modern-modal.app-container { width:1050px; max-width:95vw; height:85vh; max-height:850px; background:var(--bg-panel); border:1px solid var(--border-color); border-radius:16px; box-shadow:0 25px 50px -12px rgba(0,0,0,.7); display:flex; flex-direction:column; position:relative; overflow:hidden; }
 .main-wrapper { flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
@@ -1389,7 +1698,8 @@ function styles(): string {
 .dock { position:absolute; top:20px; bottom:20px; left:20px; width:60px; background:rgba(18,18,20,.7); backdrop-filter:blur(15px); border:1px solid rgba(255,255,255,.1); border-radius:12px; display:flex; flex-direction:column; padding-top:15px; transition:width .3s cubic-bezier(.4,0,.2,1); overflow:hidden; white-space:nowrap; z-index:50; }
 .dock:hover { width:240px; box-shadow:10px 10px 40px rgba(0,0,0,.8); }
 .dock-icon { display:flex; align-items:center; width:240px; height:50px; padding:0 20px; color:#a1a1aa; cursor:pointer; transition:.2s; font-weight:600; font-size:.9rem; margin-bottom:5px; border:0; background:transparent; }
-.dock-icon .meg-svg { width:20px; height:20px; margin-right:15px; flex:0 0 20px; }
+.dock-icon .meg-fa { width:20px; height:20px; margin-right:15px; flex:0 0 20px; }
+.dock-icon .meg-svg { width:20px; height:20px; }
 .dock-icon span { opacity:0; transition:opacity .2s; pointer-events:none; display:inline; }
 .dock:hover .dock-icon span { opacity:1; transition-delay:.1s; }
 .dock-icon:hover { color:#fff; background:rgba(255,255,255,.1); border-radius:8px; margin-left:10px; width:220px; }
@@ -1417,7 +1727,7 @@ function styles(): string {
 .wstyle-header-left { display:flex; align-items:center; gap:14px; min-width:0; }
 .mtab-header-icon, .wstyle-header-icon { width:44px; height:44px; border-radius:12px; display:grid; place-items:center; background:linear-gradient(135deg,var(--header-color,#a855f7),color-mix(in srgb,var(--header-color,#a855f7) 72%,#000)); color:#fff; box-shadow:0 4px 15px rgba(0,0,0,.2); }
 .wstyle-header-icon { background:linear-gradient(135deg,#a855f7,#6366f1); box-shadow:0 4px 15px rgba(168,85,247,.3); }
-.mtab-header-icon .meg-svg, .wstyle-header-icon .meg-svg { width:21px; height:21px; }
+.mtab-header-icon .meg-fa, .wstyle-header-icon .meg-fa, .mtab-header-icon .meg-svg, .wstyle-header-icon .meg-svg { width:21px; height:21px; }
 .mtab-header h2, .wstyle-header h2 { margin:0; font-size:1.25rem; font-weight:800; line-height:1.1; letter-spacing:0; }
 .mtab-header p, .wstyle-header p { margin:2px 0 0; color:#a1a1aa; font-size:.78rem; }
 .mtab-header-badge, .wstyle-active-badge { border:1px solid color-mix(in srgb,var(--badge-color,#10b981) 38%,transparent); color:var(--badge-color,#10b981); background:color-mix(in srgb,var(--badge-color,#10b981) 14%,transparent); padding:7px 14px; border-radius:20px; font-size:.72rem; font-weight:800; display:flex; gap:6px; align-items:center; text-transform:uppercase; letter-spacing:.5px; white-space:nowrap; }
@@ -1451,6 +1761,10 @@ function styles(): string {
 .ecard-badge.new { color:#3b82f6; background:rgba(59,130,246,.15); }
 .ecard-badge.locked { color:#a1a1aa; background:rgba(82,82,91,.25); }
 .ecard-badge.active-badge { color:#10b981; background:rgba(16,185,129,.15); }
+.ecard-badge.v6-active { color:#3b82f6; background:rgba(59,130,246,.15); }
+.card-button-reset { border:0; background:transparent; color:inherit; width:100%; padding:0; margin:0; text-align:left; cursor:pointer; font:inherit; display:flex; flex-direction:column; }
+.nested-toggle { padding:0 14px 14px; }
+.nested-toggle .mtab-toggle-row { padding:12px 14px; border-radius:10px; }
 .mtab-card-list { display:flex; flex-direction:column; gap:8px; }
 .mtab-card-list.dashed { min-height:64px; padding:12px; border:1px dashed #27272a; border-radius:8px; background:rgba(0,0,0,.12); }
 .mtab-toggle-row { width:100%; display:flex; justify-content:space-between; align-items:center; gap:16px; border:1px solid var(--border-color); border-radius:14px; background:var(--bg-main); color:#f4f4f5; padding:16px 20px; cursor:pointer; text-align:left; transition:all .25s ease; }
