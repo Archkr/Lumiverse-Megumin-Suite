@@ -50,6 +50,9 @@ export const DEFAULT_PROFILE: MeguminProfile = {
   imageGen: {
     enabled: false,
     generatorBackend: "direct",
+    comfyUrl: "http://127.0.0.1:8188",
+    currentWorkflowName: "",
+    savedWorkflowStates: {},
     connectionId: "",
     selectedModel: "",
     selectedSampler: "euler",
@@ -106,6 +109,9 @@ export function mergeProfile(raw: unknown): MeguminProfile {
   merged.onomatopoeia = { ...base.onomatopoeia, ...(input.onomatopoeia || {}) };
   merged.storyPlan = { ...base.storyPlan, ...(input.storyPlan || {}) };
   merged.imageGen = { ...base.imageGen, ...(input.imageGen || {}) };
+  merged.userWordCount = String((input as any).userWordCount ?? base.userWordCount);
+  merged.userLanguage = String((input as any).userLanguage ?? base.userLanguage);
+  merged.customThinkEffort = String((input as any).customThinkEffort ?? base.customThinkEffort);
   merged.memoryCore = {
     ...base.memoryCore,
     ...(input.memoryCore || {}),

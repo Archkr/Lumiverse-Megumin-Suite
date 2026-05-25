@@ -3,6 +3,7 @@ import { buildPromptMessages, getLogic, allEngines } from "./prompt-engine";
 import type { ChatContext, ChatMessage, EngineMode, MeguminProfile, NpcRecord, RpcEnvelope, RpcResponse } from "./types";
 import { cleanAIOutput, cleanChatText, escapeXmlAttr, extractNpcBlocks, npcBuildText } from "./text";
 import { patchComfyWorkflow } from "./image-workflow";
+import { MEGUMIN_PRESET_SEEDS, type PresetSeed, type PresetSeedKind } from "./preset-seeds";
 
 declare const spindle: any;
 
@@ -42,6 +43,8 @@ type PresetKind = "engine" | "image";
 type PresetBridgeState = {
   enginePresetId?: string;
   imagePresetId?: string;
+  suiteDs4PresetId?: string;
+  suiteGeminiPresetId?: string;
   updatedAt?: number;
 };
 
@@ -78,32 +81,76 @@ async function hasPresetAccess(): Promise<boolean> {
   }
 }
 
-function presetStateKey(kind: PresetKind): keyof PresetBridgeState {
-  return kind === "engine" ? "enginePresetId" : "imagePresetId";
+function presetStateKey(kind: PresetSeedKind): keyof PresetBridgeState {
+  if (kind === "image") return "imagePresetId";
+  if (kind === "suite-ds4") return "suiteDs4PresetId";
+  if (kind === "suite-gemini") return "suiteGeminiPresetId";
+  return "enginePresetId";
 }
 
-function presetName(kind: PresetKind): string {
-  return kind === "engine" ? "Megumin Engine Preset" : "Megumin Image Preset";
+function presetSeed(kind: PresetSeedKind): PresetSeed {
+  const seed = MEGUMIN_PRESET_SEEDS.find((item) => item.kind === kind);
+  if (!seed) throw new Error(`Missing Megumin preset seed: ${kind}`);
+  return seed;
 }
 
-function presetBlockContent(kind: PresetKind): string {
-  if (kind === "image") {
-    return [
-      "You are Megumin Suite's image prompt generator.",
-      "Convert the latest roleplay scene into a concise, vivid image prompt.",
-      "Return only the image prompt. Do not add commentary, markdown, XML, or surrounding quotes.",
-      "Prioritize visible characters, pose, expression, location, lighting, camera framing, and art-medium tags when requested."
-    ].join("\n");
+function presetName(kind: PresetSeedKind): string {
+  const name = presetSeed(kind).name;
+  return kind === "engine" || kind === "image" ? `${name} Preset` : name;
+}
+
+function presetParameters(seed: PresetSeed): Record<string, unknown> {
+  const data = seed.data || {};
+  const ignored = new Set(["prompts", "prompt_order", "extensions"]);
+  const parameters: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (!ignored.has(key)) parameters[key] = value;
   }
-  return [
-    "You are Megumin Suite's utility generation engine.",
-    "Follow the user's requested utility task exactly.",
-    "Return only the requested payload with no assistant commentary, greetings, markdown fences, or apologies.",
-    "Preserve roleplay continuity, avoid writing actions or thoughts for the user character, and stay grounded in the provided transcript."
-  ].join("\n");
+  return parameters;
 }
 
-async function findMeguminPreset(kind: PresetKind, userId?: string): Promise<any | null> {
+function promptOrderForSeed(seed: PresetSeed): Map<string, boolean> {
+  const order = Array.isArray(seed.data?.prompt_order) ? seed.data.prompt_order : [];
+  const preferred = order.find((entry: any) => entry?.character_id === 100001) || order[0] || {};
+  const map = new Map<string, boolean>();
+  for (const entry of preferred.order || []) {
+    if (entry?.identifier) map.set(String(entry.identifier), entry.enabled !== false);
+  }
+  return map;
+}
+
+function stPositionToLumiverse(value: unknown): "pre_history" | "post_history" | "in_history" {
+  if (value === 1 || value === "1" || value === "post_history") return "post_history";
+  if (value === 2 || value === "2" || value === "in_history") return "in_history";
+  return "pre_history";
+}
+
+function stRoleToLumiverse(value: unknown): "system" | "user" | "assistant" | "user_append" | "assistant_append" {
+  return value === "user" || value === "assistant" || value === "user_append" || value === "assistant_append" ? value : "system";
+}
+
+function convertStPromptToBlock(seed: PresetSeed, prompt: any, index: number): Record<string, unknown> {
+  const order = promptOrderForSeed(seed);
+  const identifier = String(prompt?.identifier || `prompt_${index}`);
+  const marker = prompt?.marker ? identifier : null;
+  const enabledFromOrder = order.has(identifier) ? order.get(identifier) : undefined;
+  return {
+    name: String(prompt?.name || identifier),
+    content: String(prompt?.content || ""),
+    role: stRoleToLumiverse(prompt?.role),
+    enabled: enabledFromOrder ?? prompt?.enabled ?? prompt?.system_prompt ?? true,
+    position: stPositionToLumiverse(prompt?.injection_position),
+    depth: Number(prompt?.injection_depth ?? 4),
+    marker,
+    isLocked: !!prompt?.forbid_overrides,
+    color: seed.kind === "image" ? "#06b6d4" : "#f59e0b",
+    injectionTrigger: Array.isArray(prompt?.injection_trigger) ? prompt.injection_trigger.map(String) : [],
+    group: seed.name,
+    variables: []
+  };
+}
+
+async function findMeguminPreset(kind: PresetSeedKind, userId?: string): Promise<any | null> {
   if (!await hasPresetAccess()) return null;
   const state = await readJson<PresetBridgeState>(PRESET_BRIDGE_PATH, {});
   const knownId = state[presetStateKey(kind)];
@@ -119,60 +166,89 @@ async function findMeguminPreset(kind: PresetKind, userId?: string): Promise<any
   const targetName = presetName(kind);
   return (listed?.data || []).find((preset: any) =>
     preset?.metadata?.megumin_suite?.kind === kind ||
+    preset?.metadata?.megumin_suite?.sourceFile === presetSeed(kind).sourceFile ||
     String(preset?.name || "").trim().toLowerCase() === targetName.toLowerCase()
   ) || null;
 }
 
-async function ensureMeguminPreset(kind: PresetKind, userId?: string): Promise<any> {
+async function ensurePresetFromSeed(seed: PresetSeed, userId?: string): Promise<any> {
   if (!await hasPresetAccess()) throw new Error("Megumin preset mode requires the presets permission.");
   const state = await readJson<PresetBridgeState>(PRESET_BRIDGE_PATH, {});
-  let preset = await findMeguminPreset(kind, userId);
+  let preset = await findMeguminPreset(seed.kind, userId);
+  const name = presetName(seed.kind);
+  const metadata = {
+    ...(preset?.metadata || {}),
+    description: `${name} managed by Megumin Suite.`,
+    megumin_suite: { kind: seed.kind, sourceFile: seed.sourceFile, version: 2 }
+  };
   if (!preset) {
     preset = await spindle.presets.create({
-      name: presetName(kind),
+      name,
       provider: "loom",
       engine: "classic",
-      parameters: {},
+      parameters: presetParameters(seed),
       prompt_order: [],
       prompts: {},
-      metadata: {
-        description: `${presetName(kind)} managed by Megumin Suite.`,
-        megumin_suite: { kind, version: 1 }
-      }
+      metadata
+    }, userId);
+  } else {
+    preset = await spindle.presets.update(preset.id, {
+      name,
+      provider: preset.provider || "loom",
+      engine: preset.engine || "classic",
+      parameters: { ...(preset.parameters || {}), ...presetParameters(seed) },
+      metadata
     }, userId);
   }
 
   const blocks = await spindle.presets.blocks.list(preset.id, userId);
-  const blockName = kind === "engine" ? "Megumin Utility Engine" : "Megumin Image Prompt Engine";
-  const existing = (blocks || []).find((block: any) => block?.name === blockName);
-  const input = {
-    name: blockName,
-    content: presetBlockContent(kind),
-    role: "system",
-    position: "pre_history",
-    enabled: true,
-    marker: null,
-    isLocked: false,
-    color: kind === "engine" ? "#f59e0b" : "#06b6d4",
-    injectionTrigger: []
-  };
-  if (existing?.id) await spindle.presets.blocks.update(preset.id, existing.id, input, userId);
-  else await spindle.presets.blocks.create(preset.id, input, { index: 0, userId });
+  for (const block of blocks || []) {
+    await spindle.presets.blocks.delete(preset.id, block.id, userId).catch(() => false);
+  }
+  const prompts = Array.isArray(seed.data?.prompts) ? seed.data.prompts : [];
+  for (let index = 0; index < prompts.length; index += 1) {
+    await spindle.presets.blocks.create(preset.id, convertStPromptToBlock(seed, prompts[index], index), { index, userId });
+  }
 
-  state[presetStateKey(kind)] = preset.id;
+  state[presetStateKey(seed.kind)] = preset.id;
   state.updatedAt = Date.now();
   await writeJson(PRESET_BRIDGE_PATH, state);
   return preset;
 }
 
-async function presetBridgeStatus(userId?: string): Promise<{ available: boolean; enginePresetId?: string; imagePresetId?: string }> {
+async function ensureSuitePresets(userId?: string): Promise<void> {
+  await Promise.all([
+    ensurePresetFromSeed(presetSeed("suite-ds4"), userId),
+    ensurePresetFromSeed(presetSeed("suite-gemini"), userId)
+  ]);
+}
+
+async function ensureMeguminPreset(kind: PresetKind, userId?: string): Promise<any> {
+  const preset = await ensurePresetFromSeed(presetSeed(kind), userId);
+  await ensureSuitePresets(userId).catch((err) => spindle.log.warn(`Megumin suite preset bridge repair failed: ${String(err)}`));
+  return preset;
+}
+
+async function ensureFullPresetBridge(userId?: string): Promise<any[]> {
+  return Promise.all(MEGUMIN_PRESET_SEEDS.map((seed) => ensurePresetFromSeed(seed, userId)));
+}
+
+async function presetBridgeStatus(userId?: string): Promise<{ available: boolean; enginePresetId?: string; imagePresetId?: string; suiteDs4PresetId?: string; suiteGeminiPresetId?: string }> {
   const available = await hasPresetAccess();
   if (!available) return { available: false };
-  const [engine, image] = await Promise.all([
+  const [engine, image, suiteDs4, suiteGemini] = await Promise.all([
     findMeguminPreset("engine", userId).catch(() => null),
-    findMeguminPreset("image", userId).catch(() => null)
+    findMeguminPreset("image", userId).catch(() => null),
+    findMeguminPreset("suite-ds4", userId).catch(() => null),
+    findMeguminPreset("suite-gemini", userId).catch(() => null)
   ]);
-  return { available: true, enginePresetId: engine?.id, imagePresetId: image?.id };
+  return {
+    available: true,
+    enginePresetId: engine?.id,
+    imagePresetId: image?.id,
+    suiteDs4PresetId: suiteDs4?.id,
+    suiteGeminiPresetId: suiteGemini?.id
+  };
 }
 
 async function loadProfile(scope: string): Promise<MeguminProfile> {
@@ -659,6 +735,10 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
       const kind = ((payload.payload as any)?.kind === "image" ? "image" : "engine") as PresetKind;
       const preset = await ensureMeguminPreset(kind, userId);
       return { presetBridge: await presetBridgeStatus(userId), preset };
+    }
+    case "preset:repairAll": {
+      const presets = await ensureFullPresetBridge(userId);
+      return { presetBridge: await presetBridgeStatus(userId), presets };
     }
     case "preset:status":
       return { presetBridge: await presetBridgeStatus(userId) };

@@ -1,25 +1,39 @@
 import type { SpindleFrontendContext } from "lumiverse-spindle-types";
 import type { IconDefinition } from "@fortawesome/fontawesome-svg-core";
 import {
+  faAddressCard,
   faAddressBook,
+  faAlignLeft,
   faArrowLeft,
+  faArrowsRotate,
   faBan,
   faBolt,
   faBook,
   faBookOpen,
+  faBoxArchive,
   faBrain,
+  faBriefcase,
+  faBullseye,
   faChartGantt,
   faCheck,
   faChevronRight,
+  faCircle,
   faCircleCheck,
+  faCircleHalfStroke,
   faCircleInfo,
+  faCircleNotch,
   faCircleXmark,
   faCode,
+  faCodeBranch,
   faCopy,
+  faCube,
   faCubes,
   faDatabase,
   faDiagramProject,
+  faDownload,
   faEarthAmericas,
+  faEye,
+  faEyeSlash,
   faFileExport,
   faFileImport,
   faFireBurner,
@@ -27,10 +41,12 @@ import {
   faFloppyDisk,
   faGaugeHigh,
   faGears,
+  faHammer,
   faImage,
   faLanguage,
   faLayerGroup,
   faLightbulb,
+  faLink,
   faList,
   faLock,
   faMagnifyingGlass,
@@ -41,21 +57,25 @@ import {
   faMicrochip,
   faPen,
   faPenNib,
+  faPenToSquare,
   faPlug,
   faPlus,
   faPlusCircle,
   faPowerOff,
   faPuzzlePiece,
+  faRightFromBracket,
   faRotateLeft,
   faRotateRight,
   faSatelliteDish,
   faScaleBalanced,
   faScroll,
   faServer,
+  faShieldHalved,
   faSliders,
   faSpinner,
   faStar,
   faToggleOn,
+  faTrash,
   faTrashCan,
   faTriangleExclamation,
   faUnlock,
@@ -63,8 +83,11 @@ import {
   faUpload,
   faUser,
   faUserAstronaut,
+  faUserLock,
+  faUserSecret,
   faUsers,
   faWandMagicSparkles,
+  faWifi,
   faXmark
 } from "@fortawesome/free-solid-svg-icons";
 import type { EngineMode, MeguminProfile, RpcResponse } from "./types";
@@ -79,6 +102,7 @@ type AppState = {
   saving: boolean;
   activeTab: number;
   devMode: boolean;
+  devEditorId: string | null;
   styleEditorId: string | null;
   engineFilter: string;
   styleFilter: string;
@@ -89,7 +113,7 @@ type AppState = {
   customEngines: EngineMode[];
   imageConnections: any[];
   uiAssets: { heroImages: string[]; groupImage?: string; mascotImage?: string };
-  presetBridge: { available: boolean; enginePresetId?: string; imagePresetId?: string };
+  presetBridge: { available: boolean; enginePresetId?: string; imagePresetId?: string; suiteDs4PresetId?: string; suiteGeminiPresetId?: string };
   status: string;
 };
 
@@ -107,6 +131,7 @@ const state: AppState = {
   saving: false,
   activeTab: 0,
   devMode: false,
+  devEditorId: null,
   styleEditorId: null,
   engineFilter: "all",
   styleFilter: "direct",
@@ -255,17 +280,16 @@ function render() {
             <div class="top-app-bar">
               <div class="app-actions">
                 <div class="live-token-count" title="Estimated Payload Tokens">${icon("fa-microchip")} ~${estimatePayloadTokens()}</div>
-                <button type="button" class="ps-modern-btn secondary gold" data-action="sync-tab">${icon("fa-earth-americas")} Sync Tab Globally</button>
-                <button type="button" class="ps-modern-btn secondary danger" data-action="reset">${icon("fa-rotate-left")} Reset</button>
-                <button type="button" class="ps-modern-btn secondary purple ${state.devMode ? "active" : ""}" data-action="open-dev">${icon("fa-code")} Dev</button>
+                <button id="btn_apply_tab_all" type="button" class="ps-modern-btn secondary gold" data-action="sync-tab">${icon("fa-earth-americas")} Sync Tab Globally</button>
+                <button id="ps_btn_reset_rule" type="button" class="ps-modern-btn secondary danger" data-action="reset">${icon("fa-rotate-left")} Reset</button>
+                <button id="ps_btn_dev_mode" type="button" class="ps-modern-btn secondary purple ${state.devMode ? "active" : ""}" data-action="open-dev">${icon("fa-code")} ${state.devMode ? "Exit Dev" : "Dev"}</button>
                 <span class="ps-save-indicator ${state.saving ? "saving" : ""}">${escapeHtml(state.status)}</span>
-                <button type="button" class="ps-modern-btn primary" data-action="close">${icon("fa-save")} Save & Close</button>
+                <button id="ps_btn_save_close" type="button" class="ps-modern-btn primary" data-action="close">${icon("fa-save")} Save & Close</button>
               </div>
             </div>
             <div class="hero-content">
               <div class="status" id="ps_rule_status_main" style="color:${status.color};text-shadow:${status.shadow};">${escapeHtml(status.text)}</div>
               <h2 class="name" id="ps_char_rule_label">${escapeHtml(heroName())}</h2>
-              <p>${escapeHtml(current.sub)}</p>
             </div>
           </section>
           <section class="main-content" id="ps_stage_content">
@@ -296,10 +320,10 @@ function heroImageUrl(): string {
 }
 
 function heroStatus(): { text: string; color: string; shadow: string } {
-  if (state.context?.isGroup) return { text: "Custom Group Profile", color: "#3b82f6", shadow: "0 0 10px rgba(59,130,246,0.5)" };
-  if (state.context?.characterId) return { text: "Custom Character Profile", color: "#10b981", shadow: "0 0 10px rgba(16,185,129,0.5)" };
-  if (state.context?.chatId) return { text: "Using System Default", color: "#f59e0b", shadow: "0 0 10px rgba(245,158,11,0.5)" };
-  return { text: "Modifying Global Default", color: "#a855f7", shadow: "0 0 10px rgba(168,85,247,0.5)" };
+  if (state.context?.isGroup) return { text: "CUSTOM GROUP PROFILE", color: "#3b82f6", shadow: "0 0 10px rgba(59,130,246,0.5)" };
+  if (state.context?.characterId) return { text: "CUSTOM CHARACTER PROFILE", color: "#10b981", shadow: "0 0 10px rgba(16,185,129,0.5)" };
+  if (state.context?.chatId) return { text: "USING SYSTEM DEFAULT", color: "#f59e0b", shadow: "0 0 10px rgba(245,158,11,0.5)" };
+  return { text: "MODIFYING GLOBAL DEFAULT", color: "#a855f7", shadow: "0 0 10px rgba(168,85,247,0.5)" };
 }
 
 function heroName(): string {
@@ -313,6 +337,7 @@ function wire(container: HTMLElement) {
     button.addEventListener("click", () => {
       state.devMode = false;
       state.styleEditorId = null;
+      state.devEditorId = null;
       state.activeTab = Number(button.dataset.tab || 0);
       render();
     });
@@ -335,6 +360,52 @@ function wire(container: HTMLElement) {
         saveProfileSoon();
       });
     }
+  });
+  container.querySelector<HTMLSelectElement>("#ig_res_preset")?.addEventListener("change", (event) => {
+    const index = Number((event.currentTarget as HTMLSelectElement).value);
+    const res = RESOLUTIONS[index];
+    if (!res) return;
+    state.profile.imageGen.imgWidth = res.w;
+    state.profile.imageGen.imgHeight = res.h;
+    saveProfileSoon();
+    render();
+  });
+  container.querySelectorAll<HTMLElement>(".dev-preset-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+      const target = button.dataset.target || "";
+      const input = target ? container.querySelector<HTMLTextAreaElement>(`#${CSS.escape(target)}`) : null;
+      if (input) input.value = button.dataset.val || "";
+    });
+  });
+  container.querySelectorAll<HTMLSelectElement>(".dev-preset-dropdown").forEach((select) => {
+    select.addEventListener("change", () => {
+      const target = select.dataset.target || "";
+      const input = target ? container.querySelector<HTMLTextAreaElement>(`#${CSS.escape(target)}`) : null;
+      if (input) input.value = select.value || "";
+      select.selectedIndex = 0;
+    });
+  });
+  container.querySelector<HTMLInputElement>("#dev_import_file")?.addEventListener("change", (event) => {
+    const file = (event.currentTarget as HTMLInputElement).files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const imported = JSON.parse(String(reader.result || "{}"));
+        const id = `custom_${Date.now()}`;
+        const label = imported.label || imported.name || "Imported Engine";
+        const data = await request<any>("engine:save", { engine: { ...imported, id, label } });
+        state.engines = data.engines;
+        state.customEngines = data.customEngines;
+        state.status = `Imported ${label}`;
+        state.devEditorId = id;
+        render();
+      } catch {
+        state.status = "Invalid engine JSON";
+        render();
+      }
+    };
+    reader.readAsText(file);
   });
 }
 
@@ -370,6 +441,7 @@ async function handleAction(el: HTMLElement) {
     if (action === "open-dev") {
       state.devMode = !state.devMode;
       state.styleEditorId = null;
+      state.devEditorId = null;
       render();
       return;
     }
@@ -385,6 +457,7 @@ async function handleAction(el: HTMLElement) {
       state.profile = mergeProfile(data.profile);
       state.status = "Reset";
       state.devMode = false;
+      state.devEditorId = null;
       render();
       return;
     }
@@ -559,7 +632,7 @@ async function handleAction(el: HTMLElement) {
       return;
     }
     if (action === "ban-add") {
-      const raw = (root().querySelector("#ban-manual") as HTMLTextAreaElement)?.value || "";
+      const raw = (root().querySelector("#ps_manual_ban_input") as HTMLInputElement)?.value || "";
       const additions = raw.split(/\n+/).map((item) => item.trim()).filter(Boolean);
       for (const item of additions) if (!state.profile.banList.includes(item)) state.profile.banList.push(item);
       saveProfileSoon();
@@ -600,6 +673,37 @@ async function handleAction(el: HTMLElement) {
       URL.revokeObjectURL(url);
       return;
     }
+    if (action === "dev-new") {
+      state.devEditorId = "__new";
+      render();
+      return;
+    }
+    if (action === "dev-import") {
+      root().querySelector<HTMLInputElement>("#dev_import_file")?.click();
+      return;
+    }
+    if (action === "dev-back") {
+      state.devEditorId = null;
+      render();
+      return;
+    }
+    if (action === "dev-clone" || action === "dev-edit") {
+      state.devEditorId = el.dataset.id || "__new";
+      render();
+      return;
+    }
+    if (action === "dev-export") {
+      const engine = state.customEngines.find((item) => item.id === el.dataset.id);
+      if (!engine) return;
+      const blob = new Blob([JSON.stringify(engine, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${(engine.label || engine.id).replace(/\s+/g, "_")}.json`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
     if (action === "dev-save") return saveDevEngine();
     if (action === "dev-delete") return deleteDevEngine(el.dataset.id || "");
   } catch (err) {
@@ -619,17 +723,25 @@ async function runTask(status: string, type: string, payload?: unknown) {
 }
 
 async function saveDevEngine() {
-  const id = (root().querySelector("#dev-id") as HTMLInputElement)?.value.trim();
-  const label = (root().querySelector("#dev-label") as HTMLInputElement)?.value.trim();
-  const p1 = (root().querySelector("#dev-p1") as HTMLTextAreaElement)?.value || "";
-  const p3 = (root().querySelector("#dev-p3") as HTMLTextAreaElement)?.value || "";
-  const p4 = (root().querySelector("#dev-p4") as HTMLTextAreaElement)?.value || "";
-  const p5 = (root().querySelector("#dev-p5") as HTMLTextAreaElement)?.value || "";
-  const p6 = (root().querySelector("#dev-p6") as HTMLTextAreaElement)?.value || "";
+  const label = (root().querySelector("#dev_mode_name") as HTMLInputElement)?.value.trim();
+  const id = ((root().querySelector("#dev_mode_id") as HTMLInputElement)?.value || label || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "");
+  const p1 = (root().querySelector("#dev_edit_p1") as HTMLTextAreaElement)?.value || "";
+  const p3 = (root().querySelector("#dev_edit_p3") as HTMLTextAreaElement)?.value || "";
+  const p4 = (root().querySelector("#dev_edit_p4") as HTMLTextAreaElement)?.value || "";
+  const p5 = (root().querySelector("#dev_edit_p5") as HTMLTextAreaElement)?.value || "";
+  const p6 = (root().querySelector("#dev_edit_p6") as HTMLTextAreaElement)?.value || "";
   if (!id || !label) throw new Error("Engine id and label are required");
-  const data = await request<any>("engine:save", { engine: { id, label, color: "#a855f7", p1, p3, p4, p5, p6 } });
+  const existing = state.customEngines.find((engine) => engine.id === id) || {};
+  const engine: Record<string, unknown> = { ...existing, id, label, color: "#a855f7", p1, p3, p4, p5, p6 };
+  const fields = ["cot", "prefill", "cyoa", "info", "summary", "death", "combat", "direct", "dn", "dialogueColor", "mvu", "storytracker", "think", "language", "pronouns", "count", "dnratio", "onomato", "banlist"];
+  for (const field of fields) {
+    const input = root().querySelector(`#dev_edit_${field}`) as HTMLTextAreaElement | null;
+    if (input) engine[field] = input.value;
+  }
+  const data = await request<any>("engine:save", { engine });
   state.engines = data.engines;
   state.customEngines = data.customEngines;
+  state.devEditorId = id;
   state.status = "Engine saved";
   render();
 }
@@ -645,7 +757,7 @@ async function deleteDevEngine(id: string) {
 
 function renderEngines(): string {
   const descriptions: Record<string, string> = {
-    balance: "The original Secret Sauce. NPCs react naturally &mdash; no simping, no needless hostility.",
+    balance: "The original Secret Sauce. NPCs react naturally - no simping, no needless hostility.",
     "balance Test": "New and improved balance mode that aims to use less tokens and more creativity.",
     cinematic: "Hollywood-inspired storytelling. Dramatic beats and heightened tension.",
     dark: "Balance but harsher. The world is unforgiving and consequences hit harder.",
@@ -659,6 +771,13 @@ function renderEngines(): string {
   const active = state.engines.find((engine) => engine.id === state.profile.mode);
   const visible = state.engines.filter((engine) => engineMatchesFilter(engine, state.engineFilter));
   const isV7 = state.profile.mode.startsWith("v7");
+  const v7Toggles = [
+    { id: "v7_ooc", label: "OOC Protocol", desc: "Allows out-of-character directives." },
+    { id: "v7_pcsolo", label: "PC Solo Physicality", desc: "Narration of PC when unobserved." },
+    { id: "v7_intro", label: "Introduction Protocol", desc: "How new NPCs enter the story." },
+    { id: "v7_culture", label: "Cultural Anchoring", desc: "Real-world integration and references." },
+    { id: "v7_scene", label: "Scene Choreography", desc: "Focus shifting and crowd management." }
+  ];
 
   return `
     ${tabHeader("Core Engines", "Choose the narrative engine that drives your AI's behavior.", "fa-microchip", "#f59e0b", active?.label || state.profile.mode, "#10b981", "fa-circle-check")}
@@ -668,14 +787,10 @@ function renderEngines(): string {
     <div class="mtab-card-grid">
       ${visible.map((engine) => engineCard(engine, descriptions[engine.id] || `${engine.label || engine.id} engine flow.`)).join("")}
     </div>
-    ${state.engineFilter === "V6" && !visible.length ? lockedState("fa-hammer", "V6 Engines are in the forge.", "Stay tuned for the next update! Later this week.") : ""}
+    <div id="v6-empty-msg" style="display:${state.engineFilter === "V6" ? "block" : "none"};">${lockedState("fa-hammer", "V6 Engines are in the forge.", "Stay tuned for the next update! Later this week.")}</div>
     ${isV7 ? `<div class="wstyle-section-head blue">${icon("fa-layer-group")} V7 Modules (Turn off to disable)</div>
     <div class="mtab-card-list">
-      ${toggleGeneric("OOC Protocol", "toggles.v7_ooc", state.profile.toggles.v7_ooc, "Allows out-of-character directives.")}
-      ${toggleGeneric("PC Solo Physicality", "toggles.v7_pcsolo", state.profile.toggles.v7_pcsolo, "Narration of PC when unobserved.")}
-      ${toggleGeneric("Introduction Protocol", "toggles.v7_intro", state.profile.toggles.v7_intro, "How new NPCs enter the story.")}
-      ${toggleGeneric("Cultural Anchoring", "toggles.v7_culture", state.profile.toggles.v7_culture, "Real-world integration and references.")}
-      ${toggleGeneric("Scene Choreography", "toggles.v7_scene", state.profile.toggles.v7_scene, "Focus shifting and crowd management.")}
+      ${v7Toggles.map((tog) => toggleGeneric(tog.label, `toggles.${tog.id}`, state.profile.toggles[tog.id] !== false, tog.desc)).join("")}
     </div>` : ""}
     ${state.customEngines.length ? `<div class="wstyle-section-head green">${icon("fa-puzzle-piece")} Custom User Engines</div><div class="mtab-card-grid">${state.customEngines.map((engine) => engineCard(engine, "Custom Engine Flow")).join("")}</div>` : ""}`;
 }
@@ -756,26 +871,50 @@ function renderStyle(): string {
 
 function renderGlobalSettings(): string {
   const addons = state.logic?.addons || [];
+  const activeMode = state.engines.find((engine) => engine.id === state.profile.mode) as any;
+  const isV6 = !!activeMode && (String(activeMode.id).includes("v6") || String(activeMode.label).includes("V6"));
+  const customSettings = Array.isArray(activeMode?.customToggles)
+    ? activeMode.customToggles.filter((item: any) => item.location === "settings")
+    : [];
   return `
     ${tabHeader("Global Settings", "Toggle add-ons, set output preferences, and configure extras.", "fa-puzzle-piece", "#3b82f6", `${state.profile.addons.length} Active`, "#3b82f6", "fa-toggle-on")}
     <div class="wstyle-section-head blue">${icon("fa-puzzle-piece")} Gameplay Add-ons</div>
-    <div class="mtab-card-grid">${addons.map((item: any) => addonCard(item)).join("")}${cinematicSoundsCard()}</div>
+    <div class="mtab-card-grid">
+      ${addons.map((item: any) => addonCard(item, isV6)).join("")}
+      ${cinematicSoundsCard()}
+    </div>
+    ${customSettings.length ? `<div class="wstyle-section-head green" style="margin-top:16px;">${icon("fa-gears")} Custom Engine Settings</div><div class="mtab-card-list">${customSettings.map((item: any) => toggleGeneric(item.name, `toggles.${item.id}`, !!state.profile.toggles[item.id], `Custom Module -> [[${item.attachPoint}]]`)).join("")}</div>` : ""}
+    <div class="wstyle-section-head blue" style="margin-top:16px;">${icon("fa-earth-americas")} Extra</div>
     <div class="mtab-panel">
-      <div class="mtab-panel-title blue">${icon("fa-earth-americas")} Extra</div>
-      ${toggleGeneric(`${icon("fa-magnifying-glass")} Prompt Payload Preview`, "toggles.promptPreview", !!state.profile.toggles.promptPreview, "Show a popup of the final constructed prompt right before it is sent to the AI. only enable if you know what you doing it maybe buggy.", true)}
-      ${toggleGeneric("Disable Utility Prefills", "disableUtilityPrefill", state.profile.disableUtilityPrefill, "Turn this ON if your API (like Claude) errors out during Image Gen, Banlist, or Story Planner generation.")}
-      <div class="mtab-setting-row">${settingText("Target Word Count", "Leave empty for no limit")}${inputField("", "userWordCount", state.profile.userWordCount, "e.g. 400", "number")}</div>
-      <div class="mtab-setting-row">${settingText("Language Output", "Leave empty for default (English)")}${inputField("", "userLanguage", state.profile.userLanguage, "e.g. Arabic, French...")}</div>
-      <div class="mtab-setting-row">${settingText("User Gender", "Ensure the AI addresses you correctly")}${selectField("", "userPronouns", state.profile.userPronouns, [["off", "Off"], ["male", "Male (Him/He)"], ["female", "Female (Her/She)"]])}</div>
+      <div id="ps_toggle_prompt_preview" class="mtab-toggle-row ${state.profile.toggles.promptPreview ? "active" : ""}" data-action="toggle" data-path="toggles.promptPreview" style="margin-bottom: 16px;">
+        <div class="toggle-info"><div class="toggle-label">${icon("fa-magnifying-glass")} Prompt Payload Preview</div><div class="toggle-desc">Show a popup of the final constructed prompt right before it is sent to the AI. only enable if you know what you doing it maybe buggy.</div></div>
+        <div class="ps-switch"></div>
+      </div>
+      <div id="ps_toggle_utility_prefill" class="mtab-toggle-row ${state.profile.disableUtilityPrefill ? "active" : ""}" data-action="toggle" data-path="disableUtilityPrefill" style="margin-bottom: 16px;">
+        <div class="toggle-info"><div class="toggle-label">Disable Utility Prefills</div><div class="toggle-desc">Turn this ON if your API (like Claude) errors out during Image Gen, Banlist, or Story Planner generation.</div></div>
+        <div class="ps-switch"></div>
+      </div>
+      <div class="mtab-setting-row">${settingText("Target Word Count", "Leave empty for no limit")}<input type="number" id="ps_input_wordcount" class="ps-modern-input" data-bind="userWordCount" style="width: 180px;" placeholder="e.g. 400" value="${escapeHtml(state.profile.userWordCount || "")}" min="1" /></div>
+      <div class="mtab-setting-row">${settingText("Language Output", "Leave empty for default (English)")}<input type="text" id="ps_input_language" class="ps-modern-input" data-bind="userLanguage" style="width: 180px;" placeholder="e.g. Arabic, French..." value="${escapeHtml(state.profile.userLanguage || "")}" /></div>
+      <div class="mtab-setting-row">${settingText("User Gender", "Ensure the AI addresses you correctly")}<select id="ps_select_pronouns" class="ps-modern-input" data-bind="userPronouns" style="width: 180px; cursor: pointer;">
+        <option value="off" ${state.profile.userPronouns === "off" ? "selected" : ""}>Off</option>
+        <option value="male" ${state.profile.userPronouns === "male" ? "selected" : ""}>Male (Him/He)</option>
+        <option value="female" ${state.profile.userPronouns === "female" ? "selected" : ""}>Female (Her/She)</option>
+      </select></div>
     </div>`;
 }
 
 function renderBlocks(): string {
   const blocks = state.logic?.blocks || [];
+  const activeMode = state.engines.find((engine) => engine.id === state.profile.mode) as any;
+  const customAddons = Array.isArray(activeMode?.customToggles)
+    ? activeMode.customToggles.filter((item: any) => item.location === "addons")
+    : [];
   return `
     ${tabHeader("Response Blocks", "Attach extra UI panels to every AI response.", "fa-cubes", "#10b981", `${state.profile.blocks.length} Active`, "#10b981", "fa-cubes")}
     <div class="mtab-card-grid">
-      ${blocks.map((item: any) => moduleCard(item, state.profile.blocks.includes(item.id), "blocks")).join("")}
+      ${blocks.map((item: any) => moduleCard(item, state.profile.blocks.includes(item.id), "blocks", !!(activeMode && typeof activeMode[item.id] === "string" && activeMode[item.id].trim()))).join("")}
+      ${customAddons.length ? `<div style="grid-column: 1 / -1;"><div class="wstyle-section-head green" style="margin:8px 0;">${icon("fa-puzzle-piece")} Custom Engine Add-ons</div></div>${customAddons.map((item: any) => infoCard({ title: item.name, sub: `Custom Module -> [[${item.attachPoint}]]`, active: !!state.profile.toggles[item.id], action: "toggle", path: `toggles.${item.id}` })).join("")}` : ""}
     </div>`;
 }
 
@@ -795,7 +934,7 @@ function renderThinking(): string {
         ["unspecified", "Unspecified"]
       ].map(([id, label]) => infoCard({ title: label, sub: "", active: state.profile.thinkEffort === normalizeEffort(id), action: "select", path: "thinkEffort", value: normalizeEffort(id) })).join("")}
     </div>
-    ${state.profile.thinkEffort === "custom" ? `<div class="mtab-panel">${inputField("Custom Word Count", "customThinkEffort", state.profile.customThinkEffort, "100", "number")}</div>` : ""}
+    ${state.profile.thinkEffort === "custom" ? `<div class="mtab-panel" style="margin-top:-10px; margin-bottom:20px;"><div class="mtab-setting-row"><div class="set-info"><div class="set-label">Custom Word Count</div></div><input type="number" id="ps_input_custom_effort" class="ps-modern-input" data-bind="customThinkEffort" style="width: 150px;" value="${escapeHtml(state.profile.customThinkEffort)}" min="1" /></div></div>` : ""}
     ${toggleGeneric(`${icon("fa-brain")} Gemini Thinking`, "thinkingV2", state.profile.thinkingV2, "Enable only for Gemini. When enabled, you MUST add <think> and </think> to the Reasoning Formatting prefix/suffix. Note: Enable Prefill ONLY if using Gemini models.", true)}
     <div class="wstyle-section-head purple">${icon("fa-diagram-project")} Thinking Framework</div>
     <div class="mtab-callout gold">${icon("fa-triangle-exclamation")} <span><strong>Important:</strong> When using GLM or DS4 models, you must disable "Main 3" and enable "Main 3 DS4 + GLM" in the Megumin Suite preset.</span></div>
@@ -809,19 +948,24 @@ function renderStory(): string {
   const sp = state.profile.storyPlan;
   return `
     ${tabHeader("Story Planner", "Brainstorm and track plot milestones automatically.", "fa-map-location-dot", "#f59e0b", sp.enabled ? "Enabled" : "Disabled", sp.enabled ? "#10b981" : "#a1a1aa", sp.enabled ? "fa-circle-check" : "fa-circle-xmark")}
-    ${toggleGeneric(`${icon("fa-map-location-dot")} Enable Story Planner`, "storyPlan.enabled", sp.enabled, "Just enable and hit generate plan now and let the ai do the rest.", true)}
-    <div class="mtab-panel" style="display:${sp.enabled ? "block" : "none"};">
-      <div class="mtab-panel-title gold">${icon("fa-gears")} Engine Settings</div>
-      <div class="mtab-setting-row">${settingText("Generation Backend", "")}${selectField("", "storyPlan.backend", sp.backend, presetBackendOptions("engine"))}</div>
-      <div class="mtab-setting-row">${settingText("Auto-Trigger Mode", "Generate new plans automatically.")}${selectField("", "storyPlan.triggerMode", sp.triggerMode, [["manual", "Manual Only"], ["frequency", "Every X Replies"]])}</div>
-      ${sp.triggerMode === "frequency" ? `<div class="mtab-setting-row">${settingText("Every X Replies", "")}${inputField("", "storyPlan.autoFreq", String(sp.autoFreq), "10", "number")}</div>` : ""}
+    <div id="sp_enable_card" class="mtab-toggle-row ${sp.enabled ? "active" : ""}" data-action="toggle" data-path="storyPlan.enabled" style="margin-bottom: 20px;">
+      <div class="toggle-info"><div class="toggle-label">${icon("fa-map-location-dot")} Enable Story Planner</div><div class="toggle-desc">Just enable and hit generate plan now and let the ai do the rest.</div></div>
+      <div class="ps-switch"></div>
     </div>
-    <div class="mtab-panel" style="display:${sp.enabled ? "block" : "none"};">
+    <div id="sp_main_content" style="display:${sp.enabled ? "block" : "none"};">
+    <div class="mtab-panel">
+      <div class="mtab-panel-title gold">${icon("fa-gears")} Engine Settings</div>
+      <div class="mtab-setting-row">${settingText("Generation Backend", "")}<select id="sp_backend" class="ps-modern-input" data-bind="storyPlan.backend" style="width: 220px; cursor: pointer;">${presetBackendOptions("engine").map(([id, label]) => `<option value="${id}" ${sp.backend === id ? "selected" : ""}>${label}</option>`).join("")}</select></div>
+      <div class="mtab-setting-row">${settingText("Auto-Trigger Mode", "Generate new plans automatically.")}<div style="display:flex; gap:8px; align-items:center;"><select id="sp_trigger" class="ps-modern-input" data-bind="storyPlan.triggerMode" style="width: 150px; cursor: pointer;"><option value="manual" ${sp.triggerMode === "manual" ? "selected" : ""}>Manual Only</option><option value="frequency" ${sp.triggerMode === "frequency" ? "selected" : ""}>Every X Replies</option></select><input type="number" id="sp_freq" class="ps-modern-input" data-bind="storyPlan.autoFreq" value="${sp.autoFreq}" min="1" style="width: 70px; text-align: center; display: ${sp.triggerMode === "frequency" ? "block" : "none"};" /></div></div>
+    </div>
+    <div class="mtab-panel">
       <div class="panel-heading-row">
         <div class="mtab-panel-title gold">${icon("fa-book-open")} Current Story Plan</div>
-        <button class="wstyle-gen-btn" type="button" data-action="story-generate">${icon("fa-bolt")} Generate Plan Now</button>
+        <button id="sp_btn_generate" class="wstyle-gen-btn" type="button" data-action="story-generate">${icon("fa-bolt")} Generate Plan Now</button>
       </div>
-      <textarea class="ps-modern-input textarea-xl" data-bind="storyPlan.currentPlan" placeholder="Generated plot milestones will appear here.">${escapeHtml(sp.currentPlan)}</textarea>
+      <textarea id="sp_current_plan" class="ps-modern-input textarea-xl" data-bind="storyPlan.currentPlan" placeholder="Generated plot milestones will appear here.">${escapeHtml(sp.currentPlan)}</textarea>
+      <div class="mtab-callout">${icon("fa-circle-info")}<span>A tracker will be added automatically at the end of each response.</span></div>
+    </div>
     </div>`;
 }
 
@@ -831,26 +975,27 @@ function renderBanList(): string {
     <div class="mtab-panel" style="margin-bottom:16px;">
       <div class="panel-heading-row">
         <div class="mtab-panel-title purple">${icon("fa-radar")} AI Slop Detector</div>
-        <button class="wstyle-gen-btn purple-bg" type="button" data-action="ban-analyze">${icon("fa-radar")} Analyze Chat</button>
+        <button id="ps_btn_scan_slop" class="wstyle-gen-btn purple-bg" type="button" data-action="ban-analyze">${icon("fa-radar")} Analyze Chat</button>
       </div>
-      <div class="mtab-setting-row">${settingText("Generator Backend", "Choose how to generate the analysis.")}${selectField("", "banListBackend", state.profile.banListBackend, presetBackendOptions("engine"))}</div>
+      <div class="mtab-setting-row">${settingText("Generator Backend", "Choose how to generate the analysis.")}<select id="ban_list_backend" class="ps-modern-input" data-bind="banListBackend" style="width: 200px; cursor: pointer;">${presetBackendOptions("engine").map(([id, label]) => `<option value="${id}" ${state.profile.banListBackend === id ? "selected" : ""}>${label}</option>`).join("")}</select></div>
     </div>
     <div class="mtab-panel" style="margin-bottom:16px;">
       <div class="mtab-panel-title red">${icon("fa-plus-circle")} Add Phrase</div>
       <div class="inline-form">
-        <input class="ps-modern-input" placeholder="Manually add a phrase to ban..." id="ban-manual">
-        <button class="ps-modern-btn secondary" type="button" data-action="ban-add">Add</button>
+        <input class="ps-modern-input" placeholder="Manually add a phrase to ban..." id="ps_manual_ban_input">
+        <button id="ps_btn_add_ban" class="ps-modern-btn secondary" type="button" data-action="ban-add">Add</button>
       </div>
     </div>
     <div class="panel-heading-row">
       <div class="wstyle-section-head red">${icon("fa-list")} Active Banned Phrases</div>
       <div class="mtab-btn-row">
-        <button class="ps-modern-btn secondary mini blue-text" type="button">${icon("fa-file-import")} Import</button>
-        <button class="ps-modern-btn secondary mini green-text" type="button" data-action="ban-export">${icon("fa-file-export")} Export</button>
-        <button class="ps-modern-btn secondary danger mini" type="button" data-action="ban-clear">${icon("fa-trash-can")} Clear All</button>
+        <input type="file" id="ps_import_bans_file" accept=".json" style="display: none;">
+        <button id="ps_btn_import_bans" class="ps-modern-btn secondary mini blue-text" type="button">${icon("fa-file-import")} Import</button>
+        <button id="ps_btn_export_bans" class="ps-modern-btn secondary mini green-text" type="button" data-action="ban-export">${icon("fa-file-export")} Export</button>
+        <button id="ps_btn_clear_bans" class="ps-modern-btn secondary danger mini" type="button" data-action="ban-clear">${icon("fa-trash-can")} Clear All</button>
       </div>
     </div>
-    <div class="mtab-card-list dashed">
+    <div id="ps_banlist_container" class="mtab-card-list dashed">
       ${state.profile.banList.length ? state.profile.banList.map((item) => `<button type="button" class="mtab-ban-item" data-action="ban-remove" data-value="${escapeHtml(item)}"><span>${escapeHtml(item)}</span>${icon("fa-xmark")}</button>`).join("") : `<span class="empty-text">No phrases banned yet.</span>`}
     </div>
     <div class="mtab-callout purple">${icon("fa-circle-info")} <span>This is a beta feature. Don't complain if you have to generate more than once.</span></div>`;
@@ -858,55 +1003,65 @@ function renderBanList(): string {
 
 function renderImage(): string {
   const ig = state.profile.imageGen;
+  const modelOptions: Array<[string, string]> = ig.selectedModel ? [["", "Loading Models..."], [ig.selectedModel, ig.selectedModel]] : [["", "Loading Models..."]];
+  const samplerOptions: Array<[string, string]> = ig.selectedSampler ? [["", "Loading Samplers..."], [ig.selectedSampler, ig.selectedSampler]] : [["", "Loading Samplers..."]];
   return `
     ${tabHeader("Image Generation", "ComfyUI integration for automatic scene rendering.", "fa-image", "#06b6d4", ig.enabled ? "Enabled" : "Disabled", ig.enabled ? "#10b981" : "#a1a1aa", ig.enabled ? "fa-circle-check" : "fa-circle-xmark")}
-    ${toggleGeneric("Enable Image Generation", "imageGen.enabled", ig.enabled, "Activate ComfyUI integration for this specific character/group.")}
-    <div class="mtab-panel">
-      <div class="mtab-panel-title blue">${icon("fa-wand-magic-sparkles")} Prompt Generator Backend</div>
-      <div class="mtab-setting-row">${settingText("Generation Method", "\"Direct\" is faster. \"Megumin Image\" is more creative.")}${selectField("", "imageGen.generatorBackend", ig.generatorBackend, presetBackendOptions("image"))}</div>
+    <div class="mtab-toggle-row ${ig.enabled ? "active" : ""}" id="ig_enable_card" data-action="toggle" data-path="imageGen.enabled" style="margin-bottom: 20px;">
+      <div class="toggle-info"><div class="toggle-label">${icon("fa-image")} Enable Image Generation</div><div class="toggle-desc">Activate ComfyUI integration for this specific character/group.</div></div>
+      <div class="ps-switch"></div>
+    </div>
+    <div class="mtab-panel" style="margin-bottom:16px;">
+      <div class="mtab-panel-title blue">${icon("fa-gears")} Prompt Generator Backend</div>
+      <div class="mtab-setting-row">${settingText("Generation Method", "\"Direct\" is faster. \"Megumin Image\" is more creative.")}<select id="img_gen_backend" class="ps-modern-input" data-bind="imageGen.generatorBackend" style="width: 220px; cursor: pointer;">${presetBackendOptions("image").map(([id, label]) => `<option value="${id}" ${ig.generatorBackend === id ? "selected" : ""}>${label}</option>`).join("")}</select></div>
     </div>
     <div id="ig_main_content" style="display:${ig.enabled ? "block" : "none"};">
-    <div class="mtab-panel">
-      <div class="mtab-panel-title blue">${icon("fa-plug")} ComfyUI Server & Workflow</div>
-      <div class="mtab-setting-row">${settingText("Connection", "Select the ComfyUI-capable image connection.")}${selectField("", "imageGen.connectionId", ig.connectionId, [["", "Default"], ...state.imageConnections.map((c): [string, string] => [String(c.id), `${c.name} (${c.provider})`])])}</div>
-      <div class="inline-form"><input class="ps-modern-input" placeholder="http://127.0.0.1:8188"><button class="ps-modern-btn secondary blue-text" type="button" data-action="image-test">${icon("fa-vial")} Test</button></div>
-      <div class="mtab-btn-row workflow-row"><button class="ps-modern-btn secondary" type="button" data-action="image-workflow-noop">${icon("fa-plus")} New</button><button class="ps-modern-btn secondary" type="button" data-action="image-workflow-noop">${icon("fa-pen")} Edit</button><button class="ps-modern-btn secondary danger" type="button" data-action="image-workflow-noop">${icon("fa-trash-can")} Delete</button></div>
-    </div>
-    <div class="mtab-panel">
-      <div class="mtab-panel-title gold">${icon("fa-sliders")} Triggers & Formatting</div>
-      <div class="mtab-setting-row">${settingText("Trigger Mode", "")}${selectField("", "imageGen.triggerMode", ig.triggerMode, [["always", "Always (Every Reply)"], ["frequency", "After X Replies"], ["conditional", "Only when character sends a pic"], ["manual", "Manual Button Only"]])}</div>
-      ${ig.triggerMode === "frequency" ? `<div class="mtab-setting-row">${settingText("Every X Replies", "")}${inputField("", "imageGen.autoGenFreq", String(ig.autoGenFreq), "1", "number")}</div>` : ""}
-      ${toggleGeneric("Preview Prompt Before Sending", "imageGen.previewPrompt", ig.previewPrompt, "Show a popup to view or edit the AI's prompt before rendering.")}
-      <div class="setting-grid">${selectField("Model Style Format", "imageGen.promptStyle", ig.promptStyle, [["standard", "Standard"], ["illustrious", "Illustrious / Pony Tags"], ["sdxl", "SDXL Natural Prose"]])}${selectField("Camera Perspective", "imageGen.promptPerspective", ig.promptPerspective, [["scene", "Cinematic Scene"], ["pov", "First Person POV"], ["character", "Character Portrait"]])}</div>
-      ${inputField("Extra Instructions...", "imageGen.promptExtra", ig.promptExtra, "moody lighting, dark atmosphere...")}
-    </div>
-    <div class="mtab-panel">
-      <div class="mtab-panel-title gold">${icon("fa-sliders")} Image Parameters</div>
-      <div class="setting-grid">
-        ${inputField("Model", "imageGen.selectedModel", ig.selectedModel, "model.safetensors")}
-        ${inputField("Sampler", "imageGen.selectedSampler", ig.selectedSampler, "euler")}
-        ${inputField("Width", "imageGen.imgWidth", String(ig.imgWidth), "1024", "number")}
-        ${inputField("Height", "imageGen.imgHeight", String(ig.imgHeight), "1024", "number")}
-        ${inputField("Steps", "imageGen.steps", String(ig.steps), "20", "number")}
-        ${inputField("CFG Scale", "imageGen.cfg", String(ig.cfg), "7", "number")}
-        ${inputField("Denoise", "imageGen.denoise", String(ig.denoise), "0.5", "number")}
-        ${inputField("CLIP Skip", "imageGen.clipSkip", String(ig.clipSkip), "1", "number")}
+    <div class="mtab-panel" style="margin-bottom:16px;">
+      <div class="mtab-panel-title blue">${icon("fa-link")} ComfyUI Server & Workflow</div>
+      <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+        <input type="text" id="ig_url" class="ps-modern-input" data-bind="imageGen.comfyUrl" value="${escapeHtml(ig.comfyUrl)}" placeholder="http://127.0.0.1:8188" style="flex: 1;" />
+        <button id="ig_test_btn" class="ps-modern-btn secondary" style="padding: 0 15px;" type="button" data-action="image-test">${icon("fa-wifi")} Test</button>
       </div>
-      <div class="wstyle-section-head blue">${icon("fa-up-right-and-down-left-from-center")} Resolution Preset</div>
-      <div class="resolution-grid">${RESOLUTIONS.map((res) => `<button type="button" class="res-pill ${ig.imgWidth === res.w && ig.imgHeight === res.h ? "active" : ""}" data-action="select-resolution" data-w="${res.w}" data-h="${res.h}">${escapeHtml(res.label)}</button>`).join("")}</div>
-      <div class="mtab-setting-row">${settingText("Seed (-1 for random)", "")}${inputField("", "imageGen.customSeed", String(ig.customSeed), "-1", "number")}</div>
-      <textarea class="ps-modern-input" data-bind="imageGen.customNegative" placeholder="Negative Prompt Override">${escapeHtml(ig.customNegative)}</textarea>
+      <div style="display: flex; gap: 10px; align-items: center;">
+        <select id="ig_workflow_list" class="ps-modern-input" data-bind="imageGen.currentWorkflowName" style="flex: 1; cursor: pointer;"><option value="">Default Lumiverse Workflow</option>${ig.currentWorkflowName ? `<option value="${escapeHtml(ig.currentWorkflowName)}" selected>${escapeHtml(ig.currentWorkflowName)}</option>` : ""}</select>
+        <button id="ig_new_wf" class="ps-modern-btn secondary" title="New Workflow" type="button">${icon("fa-plus")}</button>
+        <button id="ig_edit_wf" class="ps-modern-btn secondary" title="Edit JSON" type="button">${icon("fa-pen")}</button>
+        <button id="ig_del_wf" class="ps-modern-btn secondary danger" title="Delete" type="button">${icon("fa-trash-can")}</button>
+      </div>
+    </div>
+    <div class="mtab-panel" style="margin-bottom:16px;">
+      <div class="mtab-panel-title gold">${icon("fa-pen-nib")} Triggers & Formatting</div>
+      <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+        <div style="flex: 2;"><div class="mini-label">Trigger Mode</div><select id="ig_trigger_mode" class="ps-modern-input" data-bind="imageGen.triggerMode" style="padding: 8px; font-size: 0.8rem; cursor: pointer;"><option value="always" ${ig.triggerMode === "always" ? "selected" : ""}>Always (Every Reply)</option><option value="frequency" ${ig.triggerMode === "frequency" ? "selected" : ""}>After X Replies</option><option value="conditional" ${ig.triggerMode === "conditional" ? "selected" : ""}>Only when character sends a pic</option><option value="manual" ${ig.triggerMode === "manual" ? "selected" : ""}>Manual Button Only</option></select></div>
+        <div style="flex: 1; display:${ig.triggerMode === "frequency" ? "block" : "none"};" id="ig_freq_container"><div class="mini-label">Every X Replies</div><input type="number" id="ig_auto_freq" class="ps-modern-input" data-bind="imageGen.autoGenFreq" value="${ig.autoGenFreq}" min="1" style="padding: 8px; font-size: 0.8rem; text-align: center;" /></div>
+      </div>
+      <div class="mtab-toggle-row ${ig.previewPrompt ? "active" : ""}" id="ig_preview_card" data-action="toggle" data-path="imageGen.previewPrompt" style="padding: 12px 18px; margin-bottom: 15px;"><div class="toggle-info"><div class="toggle-label" style="font-size:0.85rem;">Preview Prompt Before Sending</div><div class="toggle-desc">Show a popup to view or edit the AI's prompt before rendering.</div></div><div class="ps-switch"></div></div>
+      <div id="ig_prompt_builder" style="background: rgba(0,0,0,0.15); padding: 15px; border-radius: 10px; border-left: 3px solid var(--gold);">
+        <div style="display: flex; gap: 15px; margin-bottom: 10px;">
+          <div style="flex:1;"><div class="mini-label">Model Style Format</div><select id="ig_style" class="ps-modern-input" data-bind="imageGen.promptStyle" style="padding: 8px; font-size: 0.8rem;"><option value="standard" ${ig.promptStyle === "standard" ? "selected" : ""}>Standard (Descriptive)</option><option value="illustrious" ${ig.promptStyle === "illustrious" ? "selected" : ""}>Illustrious/Pony (Tags)</option><option value="sdxl" ${ig.promptStyle === "sdxl" ? "selected" : ""}>SDXL (Natural Prose)</option></select></div>
+          <div style="flex:1;"><div class="mini-label">Camera Perspective</div><select id="ig_persp" class="ps-modern-input" data-bind="imageGen.promptPerspective" style="padding: 8px; font-size: 0.8rem;"><option value="scene" ${ig.promptPerspective === "scene" ? "selected" : ""}>Cinematic Scene</option><option value="pov" ${ig.promptPerspective === "pov" ? "selected" : ""}>First Person (POV)</option><option value="character" ${ig.promptPerspective === "character" ? "selected" : ""}>Character Portrait</option></select></div>
+        </div>
+        <input type="text" id="ig_extra" class="ps-modern-input" data-bind="imageGen.promptExtra" placeholder="Extra Instructions (e.g. moody lighting, dark atmosphere...)" value="${escapeHtml(ig.promptExtra)}" style="padding: 8px; font-size: 0.8rem;" />
+      </div>
+    </div>
+    <div class="mtab-panel" style="margin-bottom:16px;">
+      <div class="mtab-panel-title gold">${icon("fa-sliders")} Image Parameters</div>
+      <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+        <select id="ig_model" class="ps-modern-input" data-bind="imageGen.selectedModel" style="flex: 2;">${modelOptions.map(([id, label]) => `<option value="${escapeHtml(id)}" ${ig.selectedModel === id ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select>
+        <select id="ig_sampler" class="ps-modern-input" data-bind="imageGen.selectedSampler" style="flex: 1;">${samplerOptions.map(([id, label]) => `<option value="${escapeHtml(id)}" ${ig.selectedSampler === id ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select>
+      </div>
+      <div class="ig-param-grid">
+        ${sliderPair("steps", "Steps", "imageGen.steps", ig.steps, 1, 100, 1)}
+        ${sliderPair("cfg", "CFG", "imageGen.cfg", ig.cfg, 1, 30, 0.5)}
+        ${sliderPair("denoise", "Denoise", "imageGen.denoise", ig.denoise, 0, 1, 0.05)}
+        ${sliderPair("clip", "CLIP", "imageGen.clipSkip", ig.clipSkip, 1, 12, 1)}
+      </div>
+      <div style="display: flex; gap: 10px; margin-bottom: 15px;"><div style="flex:2;"><div class="mini-label">Resolution Preset</div><select id="ig_res_preset" class="ps-modern-input" style="padding: 8px; font-size: 0.8rem;"><option value="">-- Select Preset --</option>${RESOLUTIONS.map((res, index) => `<option value="${index}" ${ig.imgWidth === res.w && ig.imgHeight === res.h ? "selected" : ""}>${escapeHtml(res.label)}</option>`).join("")}</select></div><div style="flex:1; display:flex; align-items:flex-end; gap:5px;"><input type="number" id="ig_w" class="ps-modern-input" data-bind="imageGen.imgWidth" value="${ig.imgWidth}" placeholder="W" style="padding:8px;text-align:center;font-size:.8rem;" /><span style="color: var(--text-muted); padding-bottom: 8px;">x</span><input type="number" id="ig_h" class="ps-modern-input" data-bind="imageGen.imgHeight" value="${ig.imgHeight}" placeholder="H" style="padding:8px;text-align:center;font-size:.8rem;" /></div></div>
+      <div style="display: flex; gap: 10px;"><div style="flex:1;"><div class="mini-label">Seed (-1 for random)</div><input type="number" id="ig_seed" class="ps-modern-input" data-bind="imageGen.customSeed" value="${ig.customSeed}" style="padding: 8px; font-size: 0.8rem;" /></div><div style="flex:2;"><div class="mini-label">Negative Prompt Override</div><input type="text" id="ig_neg" class="ps-modern-input" data-bind="imageGen.customNegative" value="${escapeHtml(ig.customNegative)}" style="padding: 8px; font-size: 0.8rem;" /></div></div>
     </div>
     <div class="mtab-panel">
       <div class="mtab-panel-title purple">${icon("fa-flask")} LoRA Lab</div>
-      <div class="setting-grid">${[1, 2, 3, 4].map((slot) => loraSlot(slot)).join("")}</div>
-    </div>
-    <div class="mtab-panel">
-      <div class="panel-heading-row">
-        <div class="mtab-panel-title blue">${icon("fa-bolt")} Manual Render</div>
-        <button class="wstyle-gen-btn blue-bg" type="button" data-action="image-manual">${icon("fa-image")} Generate Image</button>
-      </div>
-      <textarea id="meg-manual-image-prompt" class="ps-modern-input" placeholder="Optional manual image prompt..."></textarea>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">${[1, 2, 3, 4].map((slot) => loraSlot(slot)).join("")}</div>
     </div>
     <details class="mtab-panel">
       <summary class="mtab-panel-title blue">${icon("fa-code")} ComfyUI Field Placeholders</summary>
@@ -920,35 +1075,45 @@ function renderNpc(): string {
   return `
     ${tabHeader("NPCs Bank", "Automatically extract and track significant NPCs in the story.", "fa-address-book", "#f43f5e", bank.enabled ? "Enabled" : "Disabled", bank.enabled ? "#10b981" : "#a1a1aa", bank.enabled ? "fa-circle-check" : "fa-circle-xmark")}
     <div class="mtab-panel">
-      ${toggleGeneric("Enable NPC Bank", "npcBank.enabled", bank.enabled, "When enabled, the AI generates detailed dossiers for new NPCs, which are saved here and injected when relevant.")}
-      ${toggleGeneric("Send Portraits to AI", "npcBank.sendPortraitsToAi", bank.sendPortraitsToAi, "If an injected NPC has a portrait, send the image to the AI to help it visualize the character.")}
+      <div id="npc_enable_card" class="mtab-toggle-row ${bank.enabled ? "active" : ""}" data-action="toggle" data-path="npcBank.enabled" style="margin-bottom: 10px;"><div class="toggle-info"><div class="toggle-label">${icon("fa-users")} Enable NPC Bank</div><div class="toggle-desc">When enabled, the AI generates detailed dossiers for new NPCs, which are saved here and injected when relevant.</div></div><div class="ps-switch"></div></div>
+      <div id="npc_send_portraits" class="mtab-toggle-row ${bank.sendPortraitsToAi ? "active" : ""}" data-action="toggle" data-path="npcBank.sendPortraitsToAi"><div class="toggle-info"><div class="toggle-label">${icon("fa-image")} Send Portraits to AI</div><div class="toggle-desc">If an injected NPC has a portrait, send the image to the AI to help it visualize the character.</div></div><div class="ps-switch"></div></div>
     </div>
     <div id="npc_main_content" style="display:${bank.enabled ? "block" : "none"};">
-    <div class="panel-heading-row"><div class="wstyle-section-head red">${icon("fa-address-book")} Saved NPCs <span class="pill-count">${bank.npcs.length}</span></div><button class="ps-modern-btn secondary danger mini" type="button" data-action="npc-clear">${icon("fa-trash-can")} Clear All</button></div>
-    ${bank.npcs.length ? `<div class="npc-list">${bank.npcs.map(renderNpcCard).join("")}</div>` : emptyWithMascot("No NPCs saved yet.", "Dossiers appear here after Megumin extracts them from assistant replies.")}
+    <div class="npc-heading"><div>${icon("fa-address-card")} Saved NPCs <span id="npc_count">(${bank.npcs.length})</span></div><button id="npc_btn_clear_all" class="ps-modern-btn secondary danger mini" type="button" data-action="npc-clear">${icon("fa-trash-can")} Clear All</button></div>
+    ${bank.npcs.length ? `<div id="npc_bank_list" class="npc-list">${[...bank.npcs].reverse().map(renderNpcCard).join("")}</div>` : `<div id="npc_bank_list" class="npc-empty">No NPCs saved yet. The AI will add them automatically when significant NPCs are introduced.</div>`}
     </div>`;
 }
 
 function renderNpcCard(npc: any): string {
-  const initials = escapeHtml(String(npc.name || "?").slice(0, 1));
+  const pfp = npc.pfpImageUrl || npc.pfp || "";
+  const isMale = String(npc.sex || "").trim().toLowerCase().startsWith("m");
+  const accent = isMale ? "#3b82f6" : "#f43f5e";
+  const accentRgb = isMale ? "59,130,246" : "244,63,94";
+  const date = new Date(npc.timestamp || Date.now()).toLocaleDateString();
+  const fields = [
+    ["appearance", "Appearance", "fa-eye", "#a78bfa"],
+    ["occupation", "Occupation", "fa-briefcase", "#60a5fa"],
+    ["background", "Background", "fa-book", "#34d399"],
+    ["innerCircle", "Inner Circle", "fa-people-group", "#fbbf24"],
+    ["personality", "Personality", "fa-masks-theater", "#f472b6"],
+    ["agenda", "Current Agenda", "fa-bullseye", "#fb923c"],
+    ["hiddenLayer", "Hidden Layer", "fa-eye-slash", "#ef4444"]
+  ];
   return `
-    <details class="npc-card">
+    <details class="npc-card" style="--npc-accent:${accent};--npc-rgb:${accentRgb};">
       <summary class="npc-card-header">
-        <span class="npc-chevron">${icon("fa-chevron-right")}</span>
-        ${npc.pfpImageUrl ? `<img class="npc-mini-pfp" src="${escapeHtml(npc.pfpImageUrl)}" alt="">` : `<span class="npc-mini-pfp placeholder">${initials}</span>`}
-        <span class="npc-card-title"><strong>${escapeHtml(npc.name)}</strong><small>${escapeHtml([npc.age, npc.sex].filter(Boolean).join(" / ") || "Unknown")}</small></span>
-        <button class="icon-btn danger" type="button" data-action="npc-remove" data-name="${escapeHtml(npc.name)}">${icon("fa-trash-can")}</button>
+        <span class="npc-title-left">${icon("fa-chevron-right")} ${pfp ? `<img class="npc-mini-pfp" src="${escapeHtml(pfp)}" alt="">` : ""}<strong>${escapeHtml(npc.name || "Unknown NPC")}</strong><small>${escapeHtml(npc.age || "?")} &middot; ${escapeHtml(npc.sex || "?")}</small></span>
+        <span class="npc-title-right"><small>${escapeHtml(date)}</small><button class="icon-btn danger" type="button" data-action="npc-remove" data-name="${escapeHtml(npc.name)}">${icon("fa-trash")}</button></span>
       </summary>
       <div class="npc-card-body">
-        <div class="npc-pfp-container">${npc.pfpImageUrl ? `<img src="${escapeHtml(npc.pfpImageUrl)}" alt="">` : `<span>${initials}</span>`}<button class="ps-modern-btn secondary mini" type="button">${icon("fa-upload")} Upload</button><button class="ps-modern-btn secondary mini" type="button" data-action="npc-portrait" data-name="${escapeHtml(npc.name)}">${icon("fa-image")} Generate</button></div>
+        <div class="npc-pfp-column">
+          <div class="npc-pfp-container">${pfp ? `<img src="${escapeHtml(pfp)}" alt="">` : `<span>${icon("fa-user-secret")}</span>`}</div>
+          <div class="npc-pfp-name">${escapeHtml(npc.name || "Unknown NPC")}</div>
+          <button class="npc-pfp-btn upload" type="button">${icon("fa-upload")} Upload</button>
+          <button class="npc-pfp-btn generate" type="button" data-action="npc-portrait" data-name="${escapeHtml(npc.name)}">${icon("fa-wand-magic-sparkles")} Generate</button>
+        </div>
         <div class="npc-fields">
-          ${npcField("Appearance", npc.appearance)}
-          ${npcField("Occupation", npc.occupation)}
-          ${npcField("Background", npc.background)}
-          ${npcField("Inner Circle", npc.innerCircle)}
-          ${npcField("Personality", npc.personality)}
-          ${npcField("Current Agenda", npc.agenda)}
-          ${npcField("Hidden Layer", npc.hiddenLayer)}
+          ${fields.map(([key, label, fieldIcon, color]) => npcField(key, label, fieldIcon, color, npc[key])).join("")}
         </div>
       </div>
     </details>`;
@@ -962,67 +1127,197 @@ function renderMemory(): string {
   const vaultPct = clamp((mem.longTermVault.length / totalUnits) * 100, 5, 70);
   return `
     ${tabHeader("Memory Core", "3-Tier Context Management: Working, Short-Term, and Long-Term Vector DB.", "fa-memory", "#10b981", mem.enabled ? "Enabled" : "Disabled", mem.enabled ? "#10b981" : "#a1a1aa", mem.enabled ? "fa-circle-check" : "fa-circle-xmark")}
-    ${toggleGeneric("Enable Memory Core", "memoryCore.enabled", mem.enabled, "Archiving happens silently in the background. Old messages fade in the UI and are replaced in the prompt with injected summaries.")}
+    <div id="mem_enable_card" class="mtab-toggle-row ${mem.enabled ? "active" : ""}" data-action="toggle" data-path="memoryCore.enabled" style="margin-bottom: 20px;"><div class="toggle-info"><div class="toggle-label">${icon("fa-microchip")} Enable Memory Core</div><div class="toggle-desc">Archiving happens silently in the background. Old messages fade in the UI and are replaced in the prompt with injected summaries.</div></div><div class="ps-switch"></div></div>
     <div id="mem_main_content" style="display:${mem.enabled ? "block" : "none"};">
-    <div class="mtab-panel">
-      <div class="panel-heading-row"><div class="mtab-panel-title green">${icon("fa-chart-gantt")} Context Allocation Dashboard</div><span class="mtab-header-badge" style="--badge-color:#a855f7;">~${estimateTokensSaved()} Tokens Saved</span></div>
-      <div class="mem-progress-container"><span class="mem-prog-working" style="width:${workingPct}%"></span><span class="mem-prog-short" style="width:${shortPct}%"></span><span class="mem-prog-long" style="width:${vaultPct}%"></span></div>
-      <div class="mem-legend"><span>Working</span><span>Pend Short</span><span>Short</span><span>Pend Vault</span><span>Vault</span></div>
-      <div class="mtab-callout green">${icon("fa-spinner")} <span>Monitoring Chat History...</span></div>
-    </div>
-    <div class="mtab-panel">
-      <div class="mtab-panel-title gold">${icon("fa-gears")} Extraction Engine Settings</div>
-      <div class="mtab-callout gold">${icon("fa-circle-info")} <span><strong>How to Use:</strong> Set limits, then use Apply & Extract Pending to archive older turns into Short-Term summaries and the Long-Term Vault.</span></div>
-      <div class="setting-grid">
-        ${selectField("Memory Architecture", "memoryCore.architecture", mem.architecture, [["raw_short_long", "Raw Text + Short-Term Summaries + Vault"], ["raw_long", "Raw Text + Vault Directly (Skip Summaries)"]])}
-        ${selectField("Generator Backend", "memoryCore.backend", mem.backend, presetBackendOptions("engine"))}
-        ${selectField("Vault Scanner Engine", "memoryCore.scannerEngine", mem.scannerEngine, [["tfidf", "TF-IDF Retrieval"], ["semantic", "Semantic Memory"]])}
-        ${inputField("Working Limit", "memoryCore.workingLimit", String(mem.workingLimit), "30", "number")}
-        ${inputField("Short-Term Limit", "memoryCore.shortTermLimit", String(mem.shortTermLimit), "70", "number")}
-        ${selectField("Auto-Trigger Mode", "memoryCore.triggerMode", mem.triggerMode, [["manual", "Manual"], ["frequency", "Every X Replies"]])}
-        ${inputField("Auto Frequency", "memoryCore.autoFreq", String(mem.autoFreq), "10", "number")}
+    <div class="mtab-panel" style="margin-bottom:16px;">
+      <div class="panel-heading-row" style="margin-bottom:10px;">
+        <div class="mtab-panel-title green" style="margin:0;">${icon("fa-chart-gantt")} Context Allocation Dashboard</div>
+        <div class="mem-token-badge">${icon("fa-floppy-disk")} <span id="mem_live_tokens_saved">~${estimateTokensSaved()}</span> Tokens Saved</div>
       </div>
-      <button class="wstyle-gen-btn blue-bg" type="button" data-action="memory-process">${icon("fa-bolt")} Apply & Extract Pending</button>
+      <div class="mem-legend">
+        <span>${icon("fa-circle")} Working</span>
+        <span id="mem_dash_short_lbl" style="display:${mem.architecture === "raw_long" ? "none" : "inline"};">${icon("fa-circle-half-stroke")} Pend Short ${icon("fa-circle")} Short</span>
+        <span>${icon("fa-circle-half-stroke")} Pend Vault ${icon("fa-circle")} Vault</span>
+      </div>
+      <div class="mem-progress-container">
+        <span id="mem_bar_work" class="mem-prog-working" style="width:${workingPct}%"></span>
+        <span id="mem_bar_short_pend" class="mem-prog-short-pending" style="width:0%"></span>
+        <span id="mem_bar_short" class="mem-prog-short" style="width:${mem.architecture === "raw_long" ? 0 : shortPct}%"></span>
+        <span id="mem_bar_long_pend" class="mem-prog-long-pending" style="width:0%"></span>
+        <span id="mem_bar_long" class="mem-prog-long" style="width:${vaultPct}%"></span>
+      </div>
+      <div id="mem_status_text" class="mem-status-text">Monitoring Chat History...</div>
+    </div>
+    <div class="mtab-panel" style="margin-bottom:16px;">
+      <div class="mtab-panel-title gold">${icon("fa-gears")} Extraction Engine Settings</div>
+      <div class="mem-help"><div>${icon("fa-circle-info")} How to Use</div><span>1- Choose your Memory Architecture and how much of each type you want (default is 30 raw, 70 summary).<br>2- Hit <b>Apply & Extract Pending</b> to save and start it.<br>3- You can choose between manual and auto. For manual, you have to hit <b>Apply & Extract Pending</b> to trigger it.</span></div>
+      <div class="mtab-setting-row" style="padding-top:0;">${settingText("Memory Architecture", "Choose how the tiers are structured.")}<select id="mem_architecture" class="ps-modern-input gold-input" data-bind="memoryCore.architecture" style="width:280px;"><option value="raw_short_long" ${mem.architecture === "raw_short_long" ? "selected" : ""}>Raw Text + Short-Term Summaries + Vault</option><option value="raw_long" ${mem.architecture === "raw_long" ? "selected" : ""}>Raw Text + Vault Directly (Skip Summaries)</option></select></div>
+      <div class="mem-slider-box">
+        <div class="mtab-param-row mem-slider-row"><span class="param-label">Working Limit</span><input type="range" id="mem_work_slider" min="30" max="300" step="10" data-bind="memoryCore.workingLimit" value="${mem.workingLimit}"><span id="mem_work_val" class="param-value">${mem.workingLimit}</span></div>
+        <div class="mtab-param-row mem-slider-row" id="mem_short_slider_row" style="display:${mem.architecture === "raw_long" ? "none" : "flex"};"><span class="param-label">Short-Term Limit</span><input type="range" id="mem_short_slider" min="10" max="1000" step="10" data-bind="memoryCore.shortTermLimit" value="${mem.shortTermLimit}"><span id="mem_short_val" class="param-value">${mem.shortTermLimit}</span></div>
+        <div class="mem-apply-row"><button id="mem_btn_apply_limits" class="ps-modern-btn secondary green-text" type="button" data-action="memory-process">${icon("fa-arrows-rotate")} Apply & Extract Pending</button></div>
+      </div>
+      <div class="mtab-setting-row">${settingText("Generator Backend", "")}<select id="mem_backend" class="ps-modern-input" data-bind="memoryCore.backend" style="width:220px;">${presetBackendOptions("engine").map(([id, label]) => `<option value="${id}" ${mem.backend === id ? "selected" : ""}>${label}</option>`).join("")}</select></div>
+      <div class="mtab-setting-row">${settingText("Vault Scanner Engine", "TF-IDF (Fast/Local) or Semantic Embeddings (Requires ST Vector Storage enabled).")}<select id="mem_scanner_engine" class="ps-modern-input" data-bind="memoryCore.scannerEngine" style="width:280px;"><option value="tfidf" ${mem.scannerEngine === "tfidf" ? "selected" : ""}>TF-IDF Keyword Matcher</option><option value="semantic" ${mem.scannerEngine === "semantic" ? "selected" : ""}>Semantic Embeddings (ST Native API)</option></select></div>
+      <div class="mtab-setting-row">${settingText("Auto-Trigger Mode", "")}<select id="mem_trigger" class="ps-modern-input" data-bind="memoryCore.triggerMode" style="width:150px;"><option value="manual" ${mem.triggerMode === "manual" ? "selected" : ""}>Manual Only</option><option value="frequency" ${mem.triggerMode === "frequency" ? "selected" : ""}>Every 10 Replies</option></select></div>
+    </div>
+    <div class="mtab-panel" style="margin-bottom:16px;">
+      <div class="panel-heading-row"><div class="mtab-panel-title gold">${icon("fa-box-archive")} Short-Term Memory <span id="mem_processing_spinner" class="mem-spinner" style="display:none;">${icon("fa-circle-notch")}</span></div><button id="mem_btn_clear_short" class="ps-modern-btn secondary danger mini" type="button" data-action="memory-clear-short">${icon("fa-trash-can")} Clear All</button></div>
+      <div id="mem_short_term_list">${(mem.shortTermChunks || []).slice(-20).reverse().map((chunk) => memoryAccordion(chunk)).join("") || `<span class="empty-text">No short-term summaries yet.</span>`}</div>
     </div>
     <div class="mtab-panel">
-      <div class="panel-heading-row"><div class="mtab-panel-title gold">${icon("fa-layer-group")} Short-Term Memory</div><button class="ps-modern-btn secondary danger mini" type="button" data-action="memory-clear-short">${icon("fa-trash-can")} Clear All</button></div>
-      ${(mem.shortTermChunks || []).slice(-20).reverse().map((chunk) => memoryAccordion(chunk)).join("") || `<span class="empty-text">No short-term summaries yet.</span>`}
-    </div>
-    <div class="mtab-panel">
-      <div class="panel-heading-row"><div class="mtab-panel-title blue">${icon("fa-database")} Long-Term Vault</div><div class="mtab-btn-row"><button class="ps-modern-btn secondary mini blue-text" type="button" data-action="memory-test-vector">${icon("fa-vial")} Test Scanner</button><button class="ps-modern-btn secondary danger mini" type="button" data-action="memory-clear-vault">${icon("fa-trash-can")} Clear All</button></div></div>
-      <input class="ps-modern-input" placeholder="Search vault...">
-      ${(mem.longTermVault || []).slice(-20).reverse().map((chunk) => memoryAccordion(chunk)).join("") || `<span class="empty-text">No vault entries yet.</span>`}
+      <div class="panel-heading-row"><div class="mtab-panel-title blue">${icon("fa-database")} Long-Term Vault (Vector Storage)</div><span id="mem_vault_count" class="empty-text">${(mem.longTermVault || []).length} Entries</span></div>
+      <div class="inline-form" style="grid-template-columns:minmax(0,1fr) auto auto; margin-bottom:10px;"><input id="mem_vault_search" class="ps-modern-input" placeholder="Search archived memories..."><button id="mem_btn_test_vector" class="ps-modern-btn secondary blue-text" type="button" data-action="memory-test-vector">${icon("fa-radar")} Test Scanner</button><button id="mem_btn_clear_vault" class="ps-modern-btn secondary danger" type="button" data-action="memory-clear-vault">${icon("fa-trash-can")} Clear All</button></div>
+      <div id="mem_vault_list">${(mem.longTermVault || []).slice(-20).reverse().map((chunk) => memoryAccordion(chunk)).join("") || `<span class="empty-text">No vault entries yet.</span>`}</div>
     </div>
     </div>`;
 }
 
 function renderDev(): string {
   const coreEngines = state.engines.filter((engine) => !state.customEngines.some((custom) => custom.id === engine.id));
+  if (!state.devEditorId) {
+    return `
+      ${tabHeader("Dev Engine Builder", "Design your own chronological AI logic flow. Clone an existing template or start from scratch.", "fa-code", "#a855f7", `${state.customEngines.length} Custom`, "#a855f7", "fa-code")}
+      <div class="dev-top-actions">
+        <button id="dev_btn_new" class="ps-modern-btn primary" type="button" data-action="dev-new">${icon("fa-wand-magic-sparkles")} Create Blank Engine</button>
+        <button id="dev_btn_import" class="ps-modern-btn secondary" type="button" data-action="dev-import">${icon("fa-file-import")} Import Engine (JSON)</button>
+        <input id="dev_import_file" type="file" accept=".json" style="display:none;">
+      </div>
+      <div class="ps-rule-title gold">${icon("fa-cube")} Core Templates (Clone)</div>
+      <div class="ps-grid">
+        ${coreEngines.map((engine) => `<div class="ps-card"><div><div class="ps-card-title">${escapeHtml(engine.label || engine.id)}</div><div class="ps-card-desc">System Default Engine</div></div><button class="ps-modern-btn secondary dev-clone" type="button" data-action="dev-clone" data-id="${escapeHtml(engine.id)}">${icon("fa-copy")} Clone & Edit</button></div>`).join("")}
+      </div>
+      <div class="ps-rule-title green">${icon("fa-microchip")} Your Custom Engines</div>
+      ${state.customEngines.length ? `<div class="ps-grid">${state.customEngines.map((engine) => `<div class="ps-card custom"><div><div class="ps-card-title green">${escapeHtml(engine.label || engine.id)}</div><div class="ps-card-desc">Custom User Logic Flow</div></div><div class="dev-card-actions"><button class="ps-modern-btn secondary" title="Export" type="button" data-action="dev-export" data-id="${escapeHtml(engine.id)}">${icon("fa-download")}</button><button class="ps-modern-btn primary gold-fill" type="button" data-action="dev-edit" data-id="${escapeHtml(engine.id)}">${icon("fa-pen")} Edit</button><button class="ps-modern-btn secondary danger" title="Delete" type="button" data-action="dev-delete" data-id="${escapeHtml(engine.id)}">${icon("fa-trash")}</button></div></div>`).join("")}</div>` : `<div class="dev-empty">No custom engines yet. Create or import one above!</div>`}`;
+  }
+  const source = resolveDevEngineSource(state.devEditorId);
+  const modeData = source.mode;
+  const isCoreClone = source.kind === "core";
+  const modeId = source.kind === "new" ? `custom_${Date.now()}` : isCoreClone ? `custom_${Date.now()}` : modeData.id;
+  const modeLabel = source.kind === "new" ? "New Custom Engine" : isCoreClone ? `${modeData.label || "Core Engine"} (Copy)` : modeData.label || "Custom Engine";
   return `
     ${tabHeader("Dev Engine Builder", "Clone, edit, and save custom Megumin engine blocks.", "fa-code", "#a855f7", `${state.customEngines.length} Custom`, "#a855f7", "fa-code")}
-    <div class="dev-layout">
-      <div class="mtab-panel">
-        <div class="mtab-panel-title purple">${icon("fa-wand-magic-sparkles")} Create Engine</div>
-        <div class="setting-grid">
-          <label class="ps-field"><span>Engine ID</span><input id="dev-id" class="ps-modern-input" placeholder="engine_id"></label>
-          <label class="ps-field"><span>Display Name</span><input id="dev-label" class="ps-modern-input" placeholder="Display name"></label>
-        </div>
-        <textarea id="dev-p1" class="ps-modern-input dev-area" placeholder="[[prompt1]] Root / setup block"></textarea>
-        <textarea id="dev-p3" class="ps-modern-input dev-area" placeholder="[[prompt3]] Middle engine block"></textarea>
-        <textarea id="dev-p4" class="ps-modern-input dev-area" placeholder="[[prompt4]] Physicality / rules block"></textarea>
-        <textarea id="dev-p5" class="ps-modern-input dev-area" placeholder="[[prompt5]] Continuation block"></textarea>
-        <textarea id="dev-p6" class="ps-modern-input dev-area" placeholder="[[prompt6]] Final reminder block"></textarea>
-        <div class="mtab-btn-row"><button class="wstyle-gen-btn green-bg" type="button" data-action="dev-save">${icon("fa-save")} Save Engine</button><button class="ps-modern-btn secondary" type="button">${icon("fa-file-import")} Import Engine JSON</button></div>
+    <div class="mtab-panel">
+      <div class="dev-editor-toolbar">
+        <button id="dev_back_list" class="ps-modern-btn secondary" type="button" data-action="dev-back">${icon("fa-arrow-left")} Back</button>
+        <input type="text" id="dev_mode_name" class="ps-modern-input" value="${escapeHtml(modeLabel)}" />
+        <input type="hidden" id="dev_mode_id" value="${escapeHtml(modeId)}">
+        <button id="dev_save_mode" class="ps-modern-btn primary" type="button" data-action="dev-save">${icon("fa-floppy-disk")} Save Engine</button>
       </div>
-      <div class="mtab-panel">
-        <div class="mtab-panel-title gold">${icon("fa-copy")} Clone Core Engine</div>
-        ${coreEngines.slice(0, 6).map((engine) => `<div class="custom-engine-row"><div><strong>${escapeHtml(engine.label || engine.id)}</strong><span>${escapeHtml(engine.id)}</span></div><button class="ps-modern-btn secondary mini" type="button">${icon("fa-copy")} Clone</button></div>`).join("")}
-      </div>
-      <div class="mtab-panel dev-full">
-        <div class="mtab-panel-title green">${icon("fa-cubes")} Custom Engines</div>
-        ${state.customEngines.length ? state.customEngines.map((engine) => `<div class="custom-engine-row"><div><strong>${escapeHtml(engine.label || engine.id)}</strong><span>${escapeHtml(engine.id)}</span></div><button class="icon-btn danger" type="button" data-action="dev-delete" data-id="${escapeHtml(engine.id)}">${icon("fa-trash-can")}</button></div>`).join("") : emptyWithMascot("No custom engines yet.", "Create one on the left, then select it from Core Engines.")}
+      <div class="dev-flow">
+        ${isCoreClone ? `${devLockedBlock("[[prompt1]]", String(modeData.p1 || ""))}${devLockedBlock("[[prompt2]]", String(modeData.p2 || ""))}` : devEditableBlock("[[prompt1]]", "p1", String(modeData.p1 || ""))}
+        ${devEditableBlock("[[prompt3]]", "p3", String(modeData.p3 || ""))}
+        ${devCustomModules(modeData, "p3")}
+        ${devInsertPoint("p3")}
+        ${devLockedBlock("[[AI1]]", "Understood.")}
+        ${devEditableBlock("[[prompt4]]", "p4", String(modeData.p4 || ""))}
+        ${devEditableBlock("[[prompt5]]", "p5", String(modeData.p5 || ""))}
+        ${devCustomModules(modeData, "p5")}
+        ${devInsertPoint("p5")}
+        ${devEditableBlock("[[prompt6]]", "p6", String(modeData.p6 || ""))}
+        ${devCustomModules(modeData, "p6")}
+        ${devInsertPoint("p6")}
+        ${devLockedBlock("[[AI2]]", "Understood.")}
+        <div class="ps-rule-title blue">${icon("fa-brain")} CoT & Logic Overrides</div>
+        ${devCotDropdownBlock("[[COT]]", "cot", String(modeData.cot || ""), "cot")}
+        ${devCotDropdownBlock("[[prefill]]", "prefill", String(modeData.prefill || ""), "prefill")}
+        ${devOverrideBlock("[[THINK]]", "think", String(modeData.think || ""), [["No Change", ""], ["Default", "<think>\\n<think>\\n<think>\\n{Thinking}\\n</think>"]])}
+        <div class="ps-rule-title green">${icon("fa-puzzle-piece")} Add-ons & Formatting Overrides</div>
+        ${devOverrideBlock("[[cyoa]]", "cyoa", String(modeData.cyoa || ""), [["No Change", ""], ["Default", logicBlock("blocks", "cyoa")]])}
+        ${devOverrideBlock("[[infoblock]]", "info", String(modeData.info || ""), [["No Change", ""], ["Default", logicBlock("blocks", "info")]])}
+        ${devOverrideBlock("[[summary]]", "summary", String(modeData.summary || ""), [["No Change", ""], ["Default", logicBlock("blocks", "summary")]])}
+        ${devOverrideBlock("[[death]]", "death", String(modeData.death || ""), [["No Change", ""], ["Default", logicBlock("addons", "death")]])}
+        ${devOverrideBlock("[[combat]]", "combat", String(modeData.combat || ""), [["No Change", ""], ["Default", logicBlock("addons", "combat")]])}
+        ${devOverrideBlock("[[Direct]]", "direct", String(modeData.direct || ""), [["No Change", ""], ["Default", logicBlock("addons", "direct")]])}
+        ${devOverrideBlock("[[DN]]", "dn", String(modeData.dn || ""), [["No Change", ""], ["Default", logicBlock("addons", "dn")]])}
+        ${devOverrideBlock("[[COLOR]]", "dialogueColor", String(modeData.dialogueColor || ""), [["No Change", ""], ["Default", logicBlock("addons", "color")]])}
+        ${devOverrideBlock("[[MVU]]", "mvu", String(modeData.mvu || ""), [["No Change", ""], ["Default", logicBlock("blocks", "mvu")]])}
+        ${devOverrideBlock("[[storytracker]]", "storytracker", String(modeData.storytracker || ""), [["No Change", ""], ["Default", "# at the very end of the response put this block:\\n<Story_Tracker>\\narc: The Arc that is now active.\\nchapter: The chapter that is now active.\\nEpisode: The episode that is now active.\\nSecrets: Any secret that the user/{{user}} doesn't know.\\n</Story_Tracker>"]])}
+        <div class="ps-rule-title gold">${icon("fa-earth-americas")} Global Variables Overrides</div>
+        ${devOverrideBlock("[[Language]]", "language", String(modeData.language || ""), [["No Change", ""], ["English Template", "[LANGUAGE RULE]\\nALL OUTPUT EXCEPT THINKING MUST BE IN ENGLISH ONLY."]])}
+        ${devOverrideBlock("[[pronouns]]", "pronouns", String(modeData.pronouns || ""), [["No Change", ""], ["Male Template", "{{user}} is male. Always portray and address him as such."]])}
+        ${devOverrideBlock("[[count]]", "count", String(modeData.count || ""), [["No Change", ""], ["Example 400", "- maximum 400 words"]])}
+        ${devOverrideBlock("[[DNRATIO]]", "dnratio", String(modeData.dnratio || ""), [["No Change", ""], ["Example 50/50", "- Ratio: Maintain a balance of 50% Dialogue and 50% Narration."]])}
+        ${devOverrideBlock("[[onomato]]", "onomato", String(modeData.onomato || ""), [["No Change", ""], ["Default", "- Narration must utilize onomatopoeia. Use precise, context-specific phonetic representations for physical interactions (e.g., the click of a latch, the thud of a heavy object, the soughing of wind) rather than abstract descriptions of sound."]])}
+        ${devOverrideBlock("[[banlist]]", "banlist", String(modeData.banlist || ""), [["No Change", ""], ["Example", "[BAN LIST]\\nNever rely on these cliches, tropes, or repetitive patterns. They are dead language:\\n- A shiver ran down their spine."]])}
       </div>
     </div>`;
+}
+
+function resolveDevEngineSource(id: string): { kind: "new" | "core" | "custom"; mode: Record<string, any> } {
+  if (id === "__new") {
+    return {
+      kind: "new",
+      mode: {
+        id: "",
+        label: "New Custom Engine",
+        p1: "",
+        p3: "",
+        p4: "",
+        p5: "",
+        p6: "",
+        cot: "",
+        prefill: "",
+        cyoa: "",
+        info: "",
+        summary: "",
+        customToggles: []
+      }
+    };
+  }
+  const custom = state.customEngines.find((engine) => engine.id === id) as Record<string, any> | undefined;
+  if (custom) return { kind: "custom", mode: custom };
+  const core = state.engines.find((engine) => engine.id === id) as Record<string, any> | undefined;
+  if (core) return { kind: "core", mode: core };
+  return resolveDevEngineSource("__new");
+}
+
+function logicBlock(collection: "addons" | "blocks", id: string): string {
+  return String((state.logic?.[collection] || []).find((item: any) => item.id === id)?.content || "");
+}
+
+function devInsertPoint(attach: string): string {
+  return `<div class="dev-insert-point" data-attach="${escapeHtml(attach)}">${icon("fa-plus")} Add Module Here</div>`;
+}
+
+function devLockedBlock(title: string, content: string): string {
+  return `<div class="dev-block locked"><div class="dev-block-title">${escapeHtml(title)} ${icon("fa-lock")}</div><div class="dev-locked-content">${escapeHtml(content)}</div></div>`;
+}
+
+function devEditableBlock(title: string, key: string, value: string): string {
+  return `<div class="dev-block"><div class="dev-block-title">${escapeHtml(title)}</div><textarea id="dev_edit_${escapeHtml(key)}" class="ps-modern-input dev-area">${escapeHtml(value)}</textarea></div>`;
+}
+
+function devOverrideBlock(title: string, key: string, value: string, presets: Array<[string, string]>): string {
+  const buttons = presets.map(([label, preset]) => {
+    const active = value === preset;
+    return `<button type="button" class="ps-modern-btn secondary mini dev-preset-btn ${active ? "active" : ""}" data-target="dev_edit_${escapeHtml(key)}" data-val="${escapeHtml(preset)}">${escapeHtml(label)}</button>`;
+  }).join("");
+  return `<div class="dev-block">
+    <div class="dev-block-heading"><div class="dev-block-title">${escapeHtml(title)}</div><div class="dev-preset-row">${buttons}</div></div>
+    <textarea id="dev_edit_${escapeHtml(key)}" class="ps-modern-input dev-area">${escapeHtml(value)}</textarea>
+  </div>`;
+}
+
+function devCotDropdownBlock(title: string, key: string, value: string, type: "cot" | "prefill"): string {
+  const options = (state.logic?.models || [])
+    .filter((model: any) => model.id !== "cot-off")
+    .map((model: any) => `<option value="${escapeHtml(String(type === "cot" ? model.content || "" : model.prefill || ""))}">${escapeHtml(model.id)}</option>`)
+    .join("");
+  return `<div class="dev-block">
+    <div class="dev-block-heading">
+      <div class="dev-block-title">${escapeHtml(title)}</div>
+      <select class="ps-modern-input dev-preset-dropdown" data-target="dev_edit_${escapeHtml(key)}"><option value="" disabled selected>Load Language Template...</option>${options}</select>
+    </div>
+    <textarea id="dev_edit_${escapeHtml(key)}" class="ps-modern-input dev-area tall">${escapeHtml(value)}</textarea>
+  </div>`;
+}
+
+function devCustomModules(modeData: Record<string, any>, attachPoint: string): string {
+  const modules = Array.isArray(modeData.customToggles)
+    ? modeData.customToggles.filter((item: any) => item.attachPoint === attachPoint)
+    : [];
+  return modules.map((item: any) => `<div class="dev-custom-module"><div><strong>${escapeHtml(item.name || "Custom Module")}</strong><span>${icon("fa-pen-to-square")}${icon("fa-trash")}</span></div><pre>${escapeHtml(item.content || "")}</pre></div>`).join("");
 }
 
 function renderStyleEditor(): string {
@@ -1063,6 +1358,14 @@ function renderStyleEditor(): string {
 }
 
 function tabHeader(title: string, sub: string, iconName: string, color: string, badge: string, badgeColor: string, badgeIcon = "fa-circle-check"): string {
+  const badgeIds: Record<string, string> = {
+    "Story Planner": "sp_header_badge",
+    "Dynamic Ban List": "ban_header_badge",
+    "Image Generation": "ig_header_badge",
+    "NPCs Bank": "npc_header_badge",
+    "Memory Core": "mem_header_badge"
+  };
+  const badgeId = badgeIds[title] ? `id="${badgeIds[title]}"` : "";
   return `
     <div class="mtab-header">
       <div class="mtab-header-left">
@@ -1072,7 +1375,7 @@ function tabHeader(title: string, sub: string, iconName: string, color: string, 
           <p>${escapeHtml(sub)}</p>
         </div>
       </div>
-      ${badge ? `<div class="mtab-header-badge" style="--badge-color:${badgeColor};">${icon(badgeIcon)} ${escapeHtml(badge)}</div>` : ""}
+      ${badge ? `<div ${badgeId} class="mtab-header-badge" style="--badge-color:${badgeColor};">${icon(badgeIcon)} ${escapeHtml(badge)}</div>` : ""}
     </div>`;
 }
 
@@ -1100,16 +1403,15 @@ function engineCard(engine: EngineMode, desc: string): string {
   const active = state.profile.mode === engine.id;
   const locked = !!engine.locked;
   const badges = [
-    active ? `<span class="ecard-badge active-badge">${icon("check")} Active</span>` : "",
     engine.recommended ? `<span class="ecard-badge rec">${icon("star")} Recommended</span>` : "",
     engine.isNew ? `<span class="ecard-badge new">New</span>` : "",
     locked ? `<span class="ecard-badge locked">${icon("lock")} Coming Soon</span>` : ""
   ].filter(Boolean).join("");
   return `<button type="button" class="mtab-eng-card ${active ? "active" : ""} ${locked ? "locked-card" : ""}" ${locked ? "" : `data-action="select-engine" data-value="${escapeHtml(engine.id)}"`}>
-    <span class="ecard-accent" style="--accent:${engine.color || "#10b981"}"></span>
+    <span class="ecard-accent"></span>
     <span class="ecard-body">
-      <span class="ecard-title"><span>${escapeHtml(engine.label || engine.id)}</span></span>
-      <span class="ecard-desc">${escapeHtml(desc).replace(/&amp;mdash;/g, "&mdash;")}</span>
+      <span class="ecard-title"><span>${escapeHtml(engine.label || engine.id)}</span>${active ? `<span class="ecard-badge active-badge">${icon("fa-check")} Active</span>` : ""}</span>
+      <span class="ecard-desc">${escapeHtml(desc)}</span>
       ${badges ? `<span class="badge-row">${badges}</span>` : ""}
     </span>
   </button>`;
@@ -1131,30 +1433,30 @@ function infoCard(input: { title: string; sub?: string; active?: boolean; action
   </button>`;
 }
 
-function moduleCard(item: any, active: boolean, path: "addons" | "blocks"): string {
+function moduleCard(item: any, active: boolean, path: "addons" | "blocks", overridden = false): string {
   const desc = moduleDesc(item.id) || strip(item.content).slice(0, 180);
   return `<button type="button" class="mtab-eng-card ${active ? "active" : ""}" data-action="toggle-array" data-path="${path}" data-value="${escapeHtml(item.id)}">
     <span class="ecard-accent"></span>
     <span class="ecard-body">
       <span class="ecard-title"><span>${escapeHtml(item.label)}</span>${active ? `<span class="ecard-badge active-badge">${icon("check")} On</span>` : ""}</span>
       <span class="ecard-desc">${escapeHtml(desc)}</span>
-      ${item.recommended ? `<span class="badge-row"><span class="ecard-badge rec">${icon("star")} Recommended</span></span>` : ""}
+      ${item.recommended || overridden ? `<span class="badge-row">${item.recommended ? `<span class="ecard-badge rec">${icon("star")} Recommended</span>` : ""}${overridden ? `<span class="ecard-badge override">${icon("fa-code")} Engine Override</span>` : ""}</span>` : ""}
     </span>
   </button>`;
 }
 
-function addonCard(item: any): string {
+function addonCard(item: any, isV6 = false): string {
   const active = state.profile.addons.includes(item.id);
   const isV6Addon = item.id === "npc_events";
-  const v6Active = state.profile.mode.includes("v6");
   const desc = moduleDesc(item.id) || strip(item.content).slice(0, 180);
   const badges = [
     active ? `<span class="ecard-badge active-badge">${icon("fa-check")} On</span>` : "",
     item.recommended ? `<span class="ecard-badge rec">${icon("fa-star")} Recommended</span>` : "",
-    isV6Addon && !v6Active ? `<span class="ecard-badge locked">${icon("fa-lock")} Requires V6</span>` : "",
-    isV6Addon && v6Active ? `<span class="ecard-badge v6-active">${icon("fa-unlock")} V6 Active</span>` : ""
+    isV6Addon && !isV6 ? `<span class="ecard-badge locked">${icon("fa-lock")} Requires V6</span>` : "",
+    isV6Addon && isV6 ? `<span class="ecard-badge v6-active">${icon("fa-unlock")} V6 Active</span>` : ""
   ].filter(Boolean).join("");
-  return `<button type="button" class="mtab-eng-card ${active ? "active" : ""}" data-action="toggle-array" data-path="addons" data-value="${escapeHtml(item.id)}">
+  const action = isV6Addon && !isV6 ? "" : `data-action="toggle-array" data-path="addons" data-value="${escapeHtml(item.id)}"`;
+  return `<button type="button" class="mtab-eng-card ${active ? "active" : ""} ${isV6Addon && !isV6 ? "locked-card" : ""}" ${action}>
     <span class="ecard-accent"></span>
     <span class="ecard-body">
       <span class="ecard-title"><span>${escapeHtml(item.label)}</span>${badges ? `<span class="badge-row">${badges}</span>` : ""}</span>
@@ -1166,11 +1468,15 @@ function addonCard(item: any): string {
 function cinematicSoundsCard(): string {
   const active = state.profile.onomatopoeia.enabled;
   return `<div class="mtab-eng-card ${active ? "active" : ""}">
+    <span class="ecard-accent"></span>
     <button type="button" class="ecard-body card-button-reset" data-action="toggle" data-path="onomatopoeia.enabled">
       <span class="ecard-title"><span>Cinematic Sounds</span>${active ? `<span class="ecard-badge active-badge">${icon("fa-check")} On</span>` : ""}</span>
       <span class="ecard-desc">Force the AI to use precise phonetic sound words (e.g., click, thud) instead of abstract descriptions.</span>
     </button>
-    ${active ? `<div class="nested-toggle">${toggleGeneric("Animate Sounds", "onomatopoeia.useStyling", state.profile.onomatopoeia.useStyling, "Wrap in HTML tags. For capable AI only.")}</div>` : ""}
+    <div style="display:${active ? "flex" : "none"}; margin: 8px 18px 16px; padding-top: 10px; border-top: 1px dashed var(--border-color); justify-content: space-between; align-items: center;">
+      <div><div style="font-weight:700; font-size: 0.75rem; color: var(--text-main);">Animate Sounds</div><div style="font-size: 0.65rem; color: var(--text-muted);">Wrap in HTML tags. For capable AI only.</div></div>
+      <button type="button" class="ps-toggle-card ${state.profile.onomatopoeia.useStyling ? "active" : ""}" id="ono_inner_toggle" data-action="toggle" data-path="onomatopoeia.useStyling" style="padding: 4px; min-width: 44px; justify-content: center; background: transparent; border-color: ${state.profile.onomatopoeia.useStyling ? "#10b981" : "var(--border-color)"};"><div class="ps-switch" style="transform: scale(0.75); ${state.profile.onomatopoeia.useStyling ? "background: #10b981;" : ""}"></div></button>
+    </div>
   </div>`;
 }
 
@@ -1193,6 +1499,10 @@ function inputField(label: string, path: string, value: string, placeholder = ""
 
 function rangeField(label: string, path: string, value: number, min: number, max: number): string {
   return `<label class="mtab-param-row"><span class="param-label">${escapeHtml(label)} <b>${value}</b></span><input class="ps-modern-input" type="range" min="${min}" max="${max}" data-bind="${escapeHtml(path)}" value="${value}"></label>`;
+}
+
+function sliderPair(id: string, label: string, path: string, value: number, min: number, max: number, step: number): string {
+  return `<div class="mtab-param-row"><span class="param-label">${escapeHtml(label)}</span><input type="range" id="ig_${id}" min="${min}" max="${max}" step="${step}" data-bind="${escapeHtml(path)}" value="${value}"><input type="number" id="ig_${id}_val" class="ps-modern-input" data-bind="${escapeHtml(path)}" value="${value}"></div>`;
 }
 
 function selectField(label: string, path: string, value: string, options: Array<[string, string]>): string {
@@ -1247,11 +1557,11 @@ function loraSlot(slot: number): string {
   const weightPath = `imageGen.selectedLoraWt${suffix}`;
   const loraValue = String(getPath(state.profile as any, loraPath) || "");
   const weightValue = Number(getPath(state.profile as any, weightPath) || 1);
-  return `<div class="lora-slot"><label class="ps-field"><span>LoRA ${slot}</span><input class="ps-modern-input" data-bind="${loraPath}" value="${escapeHtml(loraValue)}" placeholder="None"></label>${rangeField("Weight", weightPath, weightValue, -2, 2)}</div>`;
+  return `<div class="lora-slot"><div class="mini-label">Slot ${slot}</div><select id="ig_lora_${slot}" class="ps-modern-input" data-bind="${loraPath}" style="padding: 6px; font-size: 0.75rem; margin-bottom: 8px;"><option value="">Loading...</option>${loraValue ? `<option value="${escapeHtml(loraValue)}" selected>${escapeHtml(loraValue)}</option>` : ""}</select><div class="mtab-param-row" style="padding:0;"><span class="param-label" style="min-width:30px;">Wt</span><input type="range" id="ig_lorawt_${slot}" min="-2" max="2" step="0.1" data-bind="${weightPath}" value="${weightValue}"><span id="ig_lorawt_lbl_${slot}" style="font-size:0.78rem; font-weight:600; color:var(--text-main); min-width:30px; text-align:center;">${weightValue}</span></div></div>`;
 }
 
-function npcField(label: string, value?: string): string {
-  return `<div class="npc-field-section"><strong>${escapeHtml(label)}</strong><p>${escapeHtml(value || "Not recorded.")}</p></div>`;
+function npcField(key: string, label: string, fieldIcon: string, color: string, value?: string): string {
+  return `<div class="npc-field-section"><strong style="color:${color};">${icon(fieldIcon)} ${escapeHtml(label)}</strong><textarea class="ps-modern-input npc-field-edit" data-field="${escapeHtml(key)}">${escapeHtml(value || "")}</textarea></div>`;
 }
 
 function memoryAccordion(chunk: any): string {
@@ -1316,13 +1626,13 @@ function cotLanguages(currentType: string): Array<{ id: string; label: string; r
   if (currentType === "v7" || currentType === "v7-lite") return [{ id: "english", label: "English" }];
   return [
     { id: "english", label: "English" },
-    { id: "arabic", label: "Arabic", rec: true },
-    { id: "spanish", label: "Spanish" },
-    { id: "french", label: "French" },
-    { id: "zh", label: "Mandarin" },
-    { id: "ru", label: "Russian" },
-    { id: "jp", label: "Japanese" },
-    { id: "pt", label: "Portuguese" }
+    { id: "arabic", label: "Arabic (العربية)", rec: true },
+    { id: "spanish", label: "Spanish (Español)" },
+    { id: "french", label: "French (Français)" },
+    { id: "zh", label: "Mandarin (中文)" },
+    { id: "ru", label: "Russian (Русский)" },
+    { id: "jp", label: "Japanese (日本語)" },
+    { id: "pt", label: "Portuguese (Português)" }
   ];
 }
 
@@ -1447,25 +1757,39 @@ function renderMeguminImageTag(payload: any) {
 }
 
 const faLibrary: Record<string, IconDefinition> = {
+  faAddressCard,
   faAddressBook,
+  faAlignLeft,
   faArrowLeft,
+  faArrowsRotate,
   faBan,
   faBolt,
   faBook,
   faBookOpen,
+  faBoxArchive,
   faBrain,
+  faBriefcase,
+  faBullseye,
   faChartGantt,
   faCheck,
   faChevronRight,
+  faCircle,
   faCircleCheck,
+  faCircleHalfStroke,
   faCircleInfo,
+  faCircleNotch,
   faCircleXmark,
   faCode,
+  faCodeBranch,
   faCopy,
+  faCube,
   faCubes,
   faDatabase,
   faDiagramProject,
+  faDownload,
   faEarthAmericas,
+  faEye,
+  faEyeSlash,
   faFileExport,
   faFileImport,
   faFireBurner,
@@ -1473,10 +1797,12 @@ const faLibrary: Record<string, IconDefinition> = {
   faFloppyDisk,
   faGaugeHigh,
   faGears,
+  faHammer,
   faImage,
   faLanguage,
   faLayerGroup,
   faLightbulb,
+  faLink,
   faList,
   faLock,
   faMagnifyingGlass,
@@ -1487,21 +1813,25 @@ const faLibrary: Record<string, IconDefinition> = {
   faMicrochip,
   faPen,
   faPenNib,
+  faPenToSquare,
   faPlug,
   faPlus,
   faPlusCircle,
   faPowerOff,
   faPuzzlePiece,
+  faRightFromBracket,
   faRotateLeft,
   faRotateRight,
   faSatelliteDish,
   faScaleBalanced,
   faScroll,
   faServer,
+  faShieldHalved,
   faSliders,
   faSpinner,
   faStar,
   faToggleOn,
+  faTrash,
   faTrashCan,
   faTriangleExclamation,
   faUnlock,
@@ -1509,8 +1839,11 @@ const faLibrary: Record<string, IconDefinition> = {
   faUpload,
   faUser,
   faUserAstronaut,
+  faUserLock,
+  faUserSecret,
   faUsers,
   faWandMagicSparkles,
+  faWifi,
   faXmark
 };
 
@@ -1525,7 +1858,11 @@ function iconExportName(name: string): string {
     "fa-radar": "fa-satellite-dish",
     "fa-vial": "fa-flask",
     "fa-chart-pie": "fa-chart-gantt",
-    "fa-sparkles": "fa-wand-magic-sparkles"
+    "fa-sparkles": "fa-wand-magic-sparkles",
+    "fa-gear": "fa-gears",
+    "fa-trash-can": "fa-trash-can",
+    "fa-trash": "fa-trash",
+    "fa-arrows-rotate": "fa-arrows-rotate"
   };
   const faName = normalizedAliases[name] || name;
   const clean = faName.replace(/^fa-/, "");
@@ -1750,7 +2087,7 @@ function styles(): string {
 .mtab-eng-card.active { border-color:#10b981; background:rgba(16,185,129,.04); box-shadow:none; }
 .mtab-eng-card.active .ecard-title { color:#10b981; }
 .mtab-eng-card.locked-card { opacity:.55; cursor:not-allowed; }
-.ecard-accent { position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,var(--accent,#27272a),transparent); }
+.ecard-accent { position:absolute; top:0; left:0; right:0; height:3px; background:linear-gradient(90deg,var(--border-color),transparent); }
 .mtab-eng-card.active .ecard-accent { background:linear-gradient(90deg,#10b981,#059669,transparent); }
 .ecard-body { padding:16px 18px; display:flex; flex-direction:column; gap:6px; width:100%; }
 .ecard-title { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; color:#fff; font-size:.95rem; font-weight:800; line-height:1.25; }
@@ -1762,6 +2099,7 @@ function styles(): string {
 .ecard-badge.locked { color:#a1a1aa; background:rgba(82,82,91,.25); }
 .ecard-badge.active-badge { color:#10b981; background:rgba(16,185,129,.15); }
 .ecard-badge.v6-active { color:#3b82f6; background:rgba(59,130,246,.15); }
+.ecard-badge.override { color:#10b981; background:rgba(16,185,129,.12); }
 .card-button-reset { border:0; background:transparent; color:inherit; width:100%; padding:0; margin:0; text-align:left; cursor:pointer; font:inherit; display:flex; flex-direction:column; }
 .nested-toggle { padding:0 14px 14px; }
 .nested-toggle .mtab-toggle-row { padding:12px 14px; border-radius:10px; }
@@ -1784,6 +2122,7 @@ function styles(): string {
 .mtab-panel-title.purple { color:#a855f7; }
 .mtab-panel-title.blue { color:#38bdf8; }
 .mtab-panel-title.red { color:#ef4444; }
+.mini-label { font-size:.7rem; font-weight:800; color:var(--text-muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:.5px; }
 .panel-heading-row { display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
 .mtab-setting-row { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:13px 0; border-top:1px solid rgba(255,255,255,.06); }
 .mtab-setting-row:first-child { border-top:0; padding-top:0; }
@@ -1892,27 +2231,89 @@ pre { white-space:pre-wrap; color:#d4d4d8; margin:0; padding:12px; border-top:1p
 .wstyle-editor-bar { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:10px; margin-bottom:12px; }
 .wstyle-info-callout { display:flex; gap:10px; margin-top:12px; color:#c4b5fd; background:rgba(168,85,247,.08); border:1px solid rgba(168,85,247,.18); border-radius:8px; padding:12px; font-size:.78rem; }
 .workflow-row { margin-top:12px; }
+.ig-param-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:15px; background:rgba(0,0,0,.1); padding:15px; border-radius:10px; border:1px solid var(--border-color); }
+.ig-param-grid .mtab-param-row { display:grid; grid-template-columns:64px minmax(0,1fr) 64px; align-items:center; gap:10px; margin:0; }
+.ig-param-grid .mtab-param-row input[type="number"] { padding:6px 8px; text-align:center; }
 .lora-slot { border:1px solid var(--border-color); border-radius:8px; padding:12px; background:rgba(0,0,0,.16); }
-.npc-list { display:flex; flex-direction:column; gap:10px; }
-.npc-card { border:1px solid var(--border-color); border-radius:12px; background:var(--bg-main); overflow:hidden; }
-.npc-card[open] .npc-chevron { transform:rotate(90deg); }
-.npc-card-header { list-style:none; display:flex; align-items:center; gap:12px; padding:12px 14px; cursor:pointer; }
+.npc-heading { display:flex; justify-content:space-between; align-items:center; margin:15px 0 12px; color:#f43f5e; font-size:.85rem; font-weight:800; text-transform:uppercase; letter-spacing:.5px; }
+.npc-heading #npc_count { color:var(--text-muted); font-size:.75rem; margin-left:8px; }
+.npc-empty { text-align:center; color:var(--text-muted); font-size:.8rem; padding:20px; border:1px dashed var(--border-color); border-radius:10px; }
+.npc-list { display:flex; flex-direction:column; gap:14px; padding:4px; }
+.npc-card { border:1px solid rgba(var(--npc-rgb),.2); border-radius:12px; background:rgba(0,0,0,.3); overflow:hidden; }
+.npc-card:hover { border-color:rgba(var(--npc-rgb),.5); }
+.npc-card[open] .npc-title-left .fa-chevron-right { transform:rotate(90deg); }
+.npc-card-header { list-style:none; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:8px 14px; cursor:pointer; background:linear-gradient(135deg,rgba(var(--npc-rgb),.15),rgba(var(--npc-rgb),.08)); }
 .npc-card-header::-webkit-details-marker { display:none; }
-.npc-chevron { color:var(--text-muted); transition:.2s; display:grid; place-items:center; }
+.npc-title-left, .npc-title-right { display:flex; align-items:center; gap:8px; min-width:0; }
+.npc-title-left .fa-chevron-right { color:var(--npc-accent); transition:.2s; }
+.npc-title-left strong { color:var(--npc-accent); font-size:.85rem; }
+.npc-title-left small { color:var(--text-muted); background:rgba(0,0,0,.3); padding:2px 6px; border-radius:4px; font-size:.6rem; white-space:nowrap; }
+.npc-title-right small { color:var(--text-muted); font-size:.6rem; }
 .npc-mini-pfp { width:34px; height:34px; border-radius:8px; object-fit:cover; border:1px solid var(--border-color); background:#0e0e11; display:grid; place-items:center; color:var(--gold); font-weight:900; }
-.npc-card-title { display:flex; flex-direction:column; gap:2px; flex:1; }
-.npc-card-title small { color:var(--text-muted); font-size:.72rem; }
-.npc-card-body { display:grid; grid-template-columns:180px minmax(0,1fr); gap:16px; padding:14px; border-top:1px solid var(--border-color); }
-.npc-pfp-container { display:flex; flex-direction:column; gap:8px; align-items:stretch; }
-.npc-pfp-container img, .npc-pfp-container > span { width:160px; height:240px; border-radius:10px; border:1px solid var(--border-color); object-fit:cover; background:#0e0e11; display:grid; place-items:center; color:var(--gold); font-size:48px; font-weight:900; }
-.npc-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; }
-.npc-field-section { border:1px solid rgba(255,255,255,.06); border-radius:8px; padding:10px; background:rgba(0,0,0,.16); }
-.npc-field-section strong { color:#fff; font-size:.78rem; }
-.npc-field-section p { color:var(--text-muted); font-size:.76rem; line-height:1.4; margin:6px 0 0; }
+.npc-card-body { display:grid; grid-template-columns:180px minmax(0,1fr); gap:12px; padding:12px; border-top:1px solid rgba(var(--npc-rgb),.15); }
+.npc-pfp-column { width:160px; display:flex; flex-direction:column; gap:8px; }
+.npc-pfp-container { width:160px; height:240px; border-radius:10px; overflow:hidden; border:2px solid rgba(var(--npc-rgb),.3); background:rgba(0,0,0,.4); display:grid; place-items:center; color:var(--npc-accent); font-size:2rem; }
+.npc-pfp-container img { width:100%; height:100%; object-fit:cover; }
+.npc-pfp-name { text-align:center; font-size:.95rem; font-weight:900; color:var(--npc-accent); text-shadow:0 1px 2px rgba(0,0,0,.5); }
+.npc-pfp-btn { width:100%; font-size:.65rem; padding:5px 0; border-radius:6px; cursor:pointer; border:1px solid rgba(var(--npc-rgb),.3); background:rgba(var(--npc-rgb),.1); color:var(--npc-accent); }
+.npc-pfp-btn.generate { border-color:rgba(168,85,247,.3); background:rgba(168,85,247,.1); color:#a855f7; }
+.npc-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:6px; min-width:0; }
+.npc-field-section { margin-bottom:6px; }
+.npc-field-section strong { font-size:.65rem; font-weight:700; margin-bottom:2px; display:flex; align-items:center; gap:4px; }
+.npc-field-edit { height:32px; min-height:32px !important; resize:vertical; font-size:.7rem; padding:4px 6px; background:rgba(0,0,0,.25); border-color:rgba(255,255,255,.06); border-radius:6px; line-height:1.3; }
 .mem-progress-container { width:100%; height:12px; background:rgba(0,0,0,.4); border-radius:6px; overflow:hidden; display:flex; margin-top:10px; border:1px solid var(--border-color); }
-.mem-legend { display:flex; justify-content:space-between; color:var(--text-muted); font-size:.68rem; margin-top:6px; text-transform:uppercase; letter-spacing:.5px; }
+.mem-prog-short-pending { background:repeating-linear-gradient(45deg,#9a3412,#9a3412 10px,#d97706 10px,#d97706 20px); }
+.mem-prog-long-pending { background:repeating-linear-gradient(45deg,#1e3a8a,#1e3a8a 10px,#2563eb 10px,#2563eb 20px); }
+.mem-legend { display:flex; justify-content:space-between; color:var(--text-muted); font-size:.68rem; margin-bottom:5px; text-transform:uppercase; letter-spacing:.5px; }
+.mem-legend span { display:flex; gap:5px; align-items:center; }
+.mem-token-badge { font-size:.75rem; font-weight:900; color:#10b981; background:rgba(16,185,129,.1); padding:4px 12px; border-radius:12px; border:1px solid rgba(16,185,129,.3); box-shadow:0 0 10px rgba(16,185,129,.2); }
+.mem-status-text { margin-top:10px; font-size:.7rem; color:var(--text-muted); text-align:center; }
+.mem-help { background:rgba(245,158,11,.1); border-left:3px solid #f59e0b; padding:12px; border-radius:6px; margin-bottom:16px; font-size:.8rem; color:var(--text-main); }
+.mem-help div { color:#f59e0b; font-weight:900; margin-bottom:6px; }
+.mem-help span { color:var(--text-muted); line-height:1.4; }
+.gold-input { color:var(--gold); border-color:rgba(245,158,11,.3); }
+.mem-slider-box { background:rgba(0,0,0,.2); padding:15px; border-radius:10px; border:1px solid var(--border-color); margin-bottom:15px; }
+.mem-slider-row { flex-direction:row; align-items:center; gap:12px; }
+.mem-slider-row .param-label { width:120px; flex:0 0 120px; }
+.mem-slider-row input { flex:1; }
+.param-value { font-size:.8rem; font-weight:900; min-width:30px; text-align:right; }
+.mem-apply-row { margin-top:15px; display:flex; justify-content:flex-end; border-top:1px dashed var(--border-color); padding-top:15px; }
 .green-text { color:#10b981 !important; border-color:rgba(16,185,129,.3) !important; }
 .blue-text { color:#3b82f6 !important; border-color:rgba(59,130,246,.3) !important; }
+.dev-top-actions { display:flex; gap:15px; margin:10px 0 30px; }
+.dev-top-actions .ps-modern-btn { flex:1; padding:12px; font-size:1rem; }
+.ps-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; margin-bottom:30px; }
+.ps-card { min-height:150px; display:flex; flex-direction:column; justify-content:space-between; gap:20px; border:1px solid var(--border-color); border-radius:12px; padding:16px; background:var(--bg-main); }
+.ps-card.custom { border-color:#10b981; background:rgba(16,185,129,.05); }
+.ps-card-title { color:#fff; font-size:.95rem; font-weight:900; }
+.ps-card-title.green { color:#10b981; }
+.ps-card-desc { margin-top:6px; color:var(--text-muted); font-size:.78rem; }
+.dev-card-actions { display:flex; gap:8px; width:100%; }
+.dev-card-actions .ps-modern-btn { flex:1; padding:6px; font-size:.8rem; }
+.gold-fill { background:var(--gold) !important; color:#000 !important; border-color:var(--gold) !important; }
+.dev-empty { padding:20px; text-align:center; color:var(--text-muted); border:1px dashed var(--border-color); border-radius:12px; margin-bottom:30px; }
+.ps-rule-title { font-size:.82rem; font-weight:900; text-transform:uppercase; letter-spacing:.5px; margin:30px 0 12px; display:flex; align-items:center; gap:8px; }
+.ps-rule-title.gold { color:var(--gold); }
+.ps-rule-title.green { color:#10b981; }
+.ps-rule-title.blue { color:#3b82f6; }
+.dev-editor-toolbar { position:sticky; top:-11px; z-index:10; background:var(--bg-panel); padding:10px 0 15px; margin:-10px 0 20px; display:flex; gap:10px; border-bottom:1px solid var(--border-color); box-shadow:0 10px 15px -10px rgba(0,0,0,.6); }
+.dev-editor-toolbar #dev_mode_name { flex:1; font-weight:900; font-size:1.1rem; border-color:var(--gold); }
+.dev-flow { display:flex; flex-direction:column; }
+.dev-block { background:var(--bg-panel); border:1px solid var(--border-color); border-radius:8px; padding:12px; margin-bottom:10px; }
+.dev-block.locked { background:rgba(0,0,0,.4); }
+.dev-block-heading { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:6px; }
+.dev-block-title { font-weight:900; color:var(--accent-color); font-size:.8rem; margin-bottom:6px; display:flex; justify-content:space-between; gap:8px; }
+.dev-block-heading .dev-block-title { margin-bottom:0; }
+.dev-locked-content { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:.75rem; color:#666; white-space:pre-wrap; }
+.dev-preset-row { display:flex; gap:6px; flex-wrap:wrap; }
+.dev-preset-btn.active { background:rgba(16,185,129,.15); border-color:#10b981; color:#10b981; }
+.dev-preset-dropdown { width:250px; padding:4px; font-size:.75rem; cursor:pointer; color:var(--gold); border-color:var(--gold); }
+.dev-area.tall { min-height:120px !important; }
+.dev-insert-point { text-align:center; padding:10px; cursor:pointer; color:var(--gold); border:2px dashed rgba(245,158,11,.3); border-radius:8px; margin:10px 0; }
+.dev-custom-module { background:rgba(16,185,129,.05); border:1px solid #10b981; border-radius:8px; padding:10px; margin-bottom:10px; }
+.dev-custom-module div { display:flex; justify-content:space-between; color:#10b981; font-size:.75rem; margin-bottom:5px; }
+.dev-custom-module span { display:flex; gap:8px; color:var(--gold); }
+.dev-custom-module pre { margin:0; border:0; padding:0; color:var(--text-muted); font-size:.7rem; }
 .meg-inline-image { margin-top:10px; border:1px solid #27272a; background:#111; border-radius:8px; overflow:hidden; max-width:420px; }
 .meg-inline-image img { display:block; width:100%; height:auto; }
 .meg-inline-image div { padding:10px; display:flex; flex-direction:column; gap:4px; }

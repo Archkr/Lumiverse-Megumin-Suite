@@ -85,6 +85,9 @@ export interface MemoryCoreSettings {
 export interface ImageGenSettings {
   enabled: boolean;
   generatorBackend: UtilityBackend;
+  comfyUrl: string;
+  currentWorkflowName: string;
+  savedWorkflowStates: Record<string, Partial<ImageGenSettings>>;
   connectionId: string;
   selectedModel: string;
   selectedSampler: string;

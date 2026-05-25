@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { clone } from "./defaults";
+import { clone, mergeProfile } from "./defaults";
 import { buildPromptMessages } from "./prompt-engine";
 import { extractNpcBlocks, relevantChunks } from "./text";
 import { patchComfyWorkflow } from "./image-workflow";
@@ -9,6 +9,7 @@ import type { ChatContext, ChatMessage, LlmMessage, MemoryChunk } from "./types"
 
 const frontendSource = readFileSync(new URL("./frontend.ts", import.meta.url), "utf8");
 const backendSource = readFileSync(new URL("./backend.ts", import.meta.url), "utf8");
+const presetSeedsSource = readFileSync(new URL("./preset-seeds.ts", import.meta.url), "utf8");
 const spindleManifest = JSON.parse(readFileSync(new URL("../spindle.json", import.meta.url), "utf8")) as { permissions: string[] };
 
 const context: ChatContext = {
@@ -43,7 +44,16 @@ describe("Megumin UI parity audit", () => {
       "Megumin Image Preset",
       "id=\"ig_main_content\"",
       "id=\"npc_main_content\"",
-      "id=\"mem_main_content\""
+      "id=\"mem_main_content\"",
+      "id=\"dev_btn_new\"",
+      "id=\"dev_btn_import\"",
+      "id=\"dev_save_mode\"",
+      "id=\"mem_bar_work\"",
+      "id=\"mem_vault_search\"",
+      "id=\"ps_btn_scan_slop\"",
+      "id=\"ig_enable_card\"",
+      "id=\"npc_enable_card\"",
+      "id=\"mem_enable_card\""
     ];
     for (const label of requiredLabels) expect(frontendSource).toContain(label);
 
@@ -56,13 +66,73 @@ describe("Megumin UI parity audit", () => {
     ];
     for (const label of forbiddenLabels) expect(frontendSource).not.toContain(label);
 
+    expect(frontendSource).not.toContain("<p>${escapeHtml(current.sub)}</p>");
+    expect(frontendSource).not.toContain("--accent:${engine.color");
+    expect(frontendSource).not.toContain("data-action=\"image-manual\"><span");
     expect(spindleManifest.permissions).toContain("presets");
     expect(backendSource).toContain("preset:ensureBridge");
+    expect(backendSource).toContain("preset:repairAll");
     expect(backendSource).toContain("force_preset_id");
   });
 });
 
+describe("Megumin preset bridge", () => {
+  test("declares and seeds the native Lumiverse presets", () => {
+    for (const name of ["Megumin Engine.json", "Megumin Image.json", "Megumin Suite V7 DS4.json", "Megumin Suite V7 Gemini.json"]) {
+      expect(presetSeedsSource).toContain(name);
+    }
+
+    expect(backendSource).toContain("MEGUMIN_PRESET_SEEDS");
+    expect(backendSource).toContain("convertStPromptToBlock");
+    expect(backendSource).toContain("suiteDs4PresetId");
+    expect(backendSource).toContain("suiteGeminiPresetId");
+    expect(spindleManifest.permissions).toContain("presets");
+  });
+});
+
+describe("Megumin ST function coverage audit", () => {
+  test("keeps Lumiverse equivalents for the major original render and backend flows", () => {
+    const frontendMappings = [
+      "function renderEngines",
+      "function renderPersona",
+      "function renderStyle",
+      "function renderGlobalSettings",
+      "function renderBlocks",
+      "function renderThinking",
+      "function renderStory",
+      "function renderBanList",
+      "function renderImage",
+      "function renderNpc",
+      "function renderMemory",
+      "function renderDev"
+    ];
+    for (const marker of frontendMappings) expect(frontendSource).toContain(marker);
+
+    const backendMappings = [
+      "buildPromptMessages",
+      "story:generate",
+      "banlist:analyze",
+      "memory:process",
+      "npc:scan",
+      "image:manual",
+      "engine:save",
+      "preset:repairAll"
+    ];
+    for (const marker of backendMappings) expect(backendSource).toContain(marker);
+  });
+});
+
 describe("Megumin prompt assembly", () => {
+  test("coerces numeric UI values before prompt assembly", () => {
+    const profile = mergeProfile({ userWordCount: 400, userLanguage: "French", customThinkEffort: 250 });
+    const result = buildPromptMessages([], [], profile, [], context);
+    const joined = result.messages.map((message) => typeof message.content === "string" ? message.content : "").join("\n");
+
+    expect(profile.userWordCount).toBe("400");
+    expect(profile.customThinkEffort).toBe("250");
+    expect(joined).toContain("maximum 400 words");
+  });
+
   test("injects Megumin blocks and prunes archived prompt turns", () => {
     const profile = clone(DEFAULT_PROFILE);
     profile.memoryCore.enabled = true;
