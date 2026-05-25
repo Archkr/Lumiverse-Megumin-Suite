@@ -1,6 +1,6 @@
 {
   "name": "lumiverse-megumin-suite",
-  "version": "7.0.0-lumiverse.1",
+  "version": "7.0.0",
   "private": true,
   "type": "module",
   "scripts": {
