@@ -3,13 +3,13 @@
 <!-- Replace with your actual banner image -->
 <img src="Screenshots/banner.png" alt="Megumin Suite Banner" width="100%">
 
-[![SillyTavern](https://img.shields.io/badge/SillyTavern-1.12%2B-blue.svg?style=for-the-badge&logo=codeigniter)](https://github.com/SillyTavern/SillyTavern)
+[![Lumiverse](https://img.shields.io/badge/Lumiverse-Spindle-blue.svg?style=for-the-badge&logo=codeigniter)](https://github.com/Archkr/Lumiverse)
 [![Version](https://img.shields.io/badge/Version-V7-green.svg?style=for-the-badge)](#)
 [![License](https://img.shields.io/badge/License-CC%20BY--NC--ND%204.0-purple.svg?style=for-the-badge)](https://creativecommons.org/licenses/by-nc-nd/4.0/)
 
 > *"Everything your preset should have been: persistent memory, chain-of-thought reasoning, automated NPC tracking, and ComfyUI image generation in a single install."*
 
-**Megumin Suite** is a full-stack overhaul to how SillyTavern presets work. It replaces your prompt engineering, your memory system, your NPC management, and your image pipeline — all in one extension. V7 adds advanced **Vector Memory**, automated **NPC Tracking**, and a strict **5-Phase Chain of Thought** reasoning framework.
+**Megumin Suite** is a full-stack overhaul to how Lumiverse presets work. It replaces your prompt engineering, your memory system, your NPC management, and your image pipeline — all in one extension. V7 adds advanced **Vector Memory**, automated **NPC Tracking**, and a strict **5-Phase Chain of Thought** reasoning framework.
 
 [Features](#-core-features) • [Installation](#-installation) • [The V7 Engine](#-the-v7-narrative-engines) • [Memory Core](#-memory-core-3-tier-context) • [Image Gen](#-image-gen-kazuma)
 
@@ -40,7 +40,7 @@ Choose the core ruleset that drives your world's logic and tone.
 Never lose track of the story, and stop wasting tokens on massive context windows.
 *   **Working Memory:** The immediate chat history.
 *   **Short-Term Memory:** Background-generated AI summaries of previous chunks.
-*   **Long-Term Vault (Vector DB):** Uses **TF-IDF Keyword Matching** or **Native SillyTavern Semantic Embeddings** to silently fetch archived memories and inject them into the prompt only when relevant.
+*   **Long-Term Vault (Vector DB):** Uses **TF-IDF Keyword Matching** or **Lumiverse memory/semantic retrieval** to silently fetch archived memories and inject them into the prompt only when relevant.
 *   **Prompt Interceptor:** Physically wipes archived messages from the prompt payload saving thousands of tokens.
 
 ###  Automated NPC Bank
@@ -60,7 +60,7 @@ Control the AI's internal reasoning process before it outputs text.
 Seamlessly wire up your local ComfyUI server to generate images while you play.
 *   **Auto-Trigger:** The AI decides when a moment is "picture-worthy" and outputs a hidden image tag, triggering ComfyUI in the background.
 *   **Overswipe Regeneration:** Simply swipe right on the last image in a gallery to instantly regenerate the prompt.
-*   **LoRA Lab & Parameters:** Full control over Steps, CFG, Denoise, and 4 LoRA slots directly inside SillyTavern.
+*   **LoRA Lab & Parameters:** Full control over Steps, CFG, Denoise, and 4 LoRA slots directly inside Lumiverse.
 
 ###  Dynamic Ban List (AI Slop Detector)
 Tired of the AI saying *"a shiver ran down your spine"* or *"testament to..."*?
@@ -76,17 +76,17 @@ Tired of the AI saying *"a shiver ran down your spine"* or *"testament to..."*?
 
 ## ⚙️ Installation
 
-1. Open SillyTavern.
+1. Open Lumiverse.
 2. Go to the **Extensions** menu (the block icon).
 3. Click **Install Extension**.
 4. Paste the repository URL:
    ```text
-   https://github.com/Arif-salah/Megumin-Suite
+   https://github.com/Archkr/Lumiverse-Megumin-Suite
    ```
-5. Refresh SillyTavern.
-6. Download the JSONs files from this repo: https://github.com/Arif-salah/Megumin-Suite/tree/main/Presets
+5. Refresh Lumiverse.
+6. Download the Lumiverse preset JSON files and regex scripts from the Megumin Suite preset package.
 > ⚠️ **Note:** If you download these on your phone and your browser renames them to `.json.txt`, you **must** use a file manager to rename them and delete the `.txt` part. Furthermore, make sure the Engine file is named EXACTLY `Megumin Engine.json` before you import it. The Suite file's name doesn't matter, but the Engine must be exact.
-7. Open SillyTavern, go to the **Ai  Response configuration** tab.
+7. Open Lumiverse, go to the **Preset / Response Configuration** area.
 8. Click the **Import Preset** button (the little folder with an arrow) and upload the json files.
 9. Once imported, open your preset dropdown and **make sure "Megumin Suite" is the active preset.** The extension handles the Engine silently in the background.
 
@@ -98,7 +98,7 @@ or just watch the **Install video:** [youtube Video](https://www.youtube.com/wat
                       - Megumin Suite V7 Gemini is for gemini models.
 if you have model not here just try.
 
-> ⚠️ **Important:** Megumin Suite ships with several **Regex scripts** that clean and format messages before they're sent to the AI. After installing, go to the **Extensions → Regex** panel and **make sure all Megumin-related regex entries are enabled**.
+> ⚠️ **Important:** Megumin Suite uses several **Regex scripts** that clean and format messages before they're sent to the AI. After importing them into Lumiverse, go to the **Regex** area and **make sure all Megumin-related regex entries are enabled**.
 
 ---
 
@@ -126,14 +126,14 @@ if you have model not here just try.
 
 *   **LLMs:** Designed for highly capable instruction-following models (Claude 4.6 Sonnet/Opus, DeepSeek v4, Gemini 3.1 pro/flash, GLM 5.1). Smaller local models may struggle with the strict V7 CoT instructions.
 *  **Does this extension mess with my other presets?** No — your other presets will work just fine. Megumin Suite only injects its rules into its own designated preset (Megumin Suite). Your existing presets remain completely untouched.
-* **Vector Storage (Optional):** if you using Semantic Embeddings in the Memory Core, you can change the model its  Cohee/jina-embeddings-v2-base-en by default if it heavy for your pc use Xenova/all-MiniLM-L6-v2 you can change it inside  "sillytavern\config.yaml"
+* **Vector Storage (Optional):** if you are using semantic retrieval in the Memory Core, use Lumiverse's memory/embedding settings to choose a lighter embedding model if the default is too heavy for your PC.
 * **Old Versions:** Legacy docs are here: [Megumin Suite v4 Legacy Readme](https://github.com/Arif-salah/Megumin-Suite/tree/V4.1)  [Megumin Suite v5 Legacy Readme](https://github.com/Arif-salah/Megumin-Suite/tree/V5) [Megumin Suite v6 Legacy Readme](https://github.com/Arif-salah/Megumin-Suite/tree/V6)
 
 ---
 
 ## 🤝 Credits & Acknowledgements
 
-*   Built natively for the [SillyTavern](https://github.com/SillyTavern/SillyTavern).
+*   Built natively for [Lumiverse](https://github.com/Archkr/Lumiverse).
 *   MVU Compatibility integration inspired by [KritBlade's MVU Game Maker](https://github.com/KritBlade/MVU_Game_Maker).
 
 ---
