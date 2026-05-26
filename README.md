@@ -3,7 +3,7 @@
 <!-- Replace with your actual banner image -->
 <img src="Screenshots/banner.png" alt="Megumin Suite Banner" width="100%">
 
-[![Lumiverse](https://img.shields.io/badge/Lumiverse-Spindle-blue.svg?style=for-the-badge&logo=codeigniter)](https://github.com/Archkr/Lumiverse)
+[![Lumiverse](https://img.shields.io/badge/Lumiverse-1.0+-blue.svg?style=for-the-badge&logo=codeigniter)](https://github.com/Archkr/Lumiverse)
 [![Version](https://img.shields.io/badge/Version-V7-green.svg?style=for-the-badge)](#)
 [![License](https://img.shields.io/badge/License-CC%20BY--NC--ND%204.0-purple.svg?style=for-the-badge)](https://creativecommons.org/licenses/by-nc-nd/4.0/)
 
@@ -77,28 +77,27 @@ Tired of the AI saying *"a shiver ran down your spine"* or *"testament to..."*?
 ## ⚙️ Installation
 
 1. Open Lumiverse.
-2. Go to the **Extensions** menu (the block icon).
-3. Click **Install Extension**.
+2. Go to the **Extensions** tab (the puzzle icon).
+3. Click **Add Extension**.
 4. Paste the repository URL:
    ```text
    https://github.com/Archkr/Lumiverse-Megumin-Suite
    ```
-5. Refresh Lumiverse.
-6. Download the Lumiverse preset JSON files and regex scripts from the Megumin Suite preset package.
+5. Download the Lumiverse preset JSONs files from this repo: https://github.com/Archkr/Lumiverse-Megumin-Suite/tree/main/Presets
 > ⚠️ **Note:** If you download these on your phone and your browser renames them to `.json.txt`, you **must** use a file manager to rename them and delete the `.txt` part. Furthermore, make sure the Engine file is named EXACTLY `Megumin Engine.json` before you import it. The Suite file's name doesn't matter, but the Engine must be exact.
-7. Open Lumiverse, go to the **Preset / Response Configuration** area.
-8. Click the **Import Preset** button (the little folder with an arrow) and upload the json files.
-9. Once imported, open your preset dropdown and **make sure "Megumin Suite" is the active preset.** The extension handles the Engine silently in the background.
+6. Open Lumiverse, go to the **Loom** tab.
+7. Click the **Import Loom** button (the 3 stacked dots) and upload the json files.
+8. Once imported, open your preset dropdown and **make sure "Megumin Suite" is the active preset.** The extension handles the Engine silently in the background.
 
 
-or just watch the **Install video:** [youtube Video](https://www.youtube.com/watch?v=Q-iaz9mBFrA) 
+~~or just watch the **Install video:** [youtube Video](https://www.youtube.com/watch?v=Q-iaz9mBFrA)~~ 
 
 
 > **💡 Pro Tip:** - Megumin Suite V7 DS4 is for Deepseek or GLM and Similar models.
                       - Megumin Suite V7 Gemini is for gemini models.
 if you have model not here just try.
 
-> ⚠️ **Important:** Megumin Suite uses several **Regex scripts** that clean and format messages before they're sent to the AI. After importing them into Lumiverse, go to the **Regex** area and **make sure all Megumin-related regex entries are enabled**.
+> ⚠️ **Important:** Megumin Suite uses several **Regex scripts** that clean and format messages before they're sent to the AI. After importing them into Lumiverse, go to the **Regex** tab and **make sure all Megumin-related regex entries are enabled**.
 
 ---
 
