@@ -709,6 +709,8 @@ function setup(ctx) {
       unsubscribe?.();
     eventUnsubscribers = [];
     cleanupTagInterceptor?.();
+    if (statusClearTimer)
+      window.clearTimeout(statusClearTimer);
     floatWidget?.destroy?.();
     appMount?.destroy?.();
     removeStyle?.();
@@ -887,7 +889,7 @@ function render() {
                 <button id="btn_apply_tab_all" type="button" class="ps-modern-btn secondary gold" data-action="sync-tab">${icon("fa-earth-americas")} Sync Tab Globally</button>
                 <button id="ps_btn_reset_rule" type="button" class="ps-modern-btn secondary danger" data-action="reset">${icon("fa-rotate-left")} Reset</button>
                 <button id="ps_btn_dev_mode" type="button" class="ps-modern-btn secondary purple ${state.devMode ? "active" : ""}" data-action="open-dev">${icon("fa-code")} ${state.devMode ? "Exit Dev" : "Dev"}</button>
-                ${state.status ? `<span class="ps-save-indicator ${state.saving ? "saving" : ""}">${escapeHtml(state.status)}</span>` : ""}
+                <span id="ps_save_indicator" class="ps-save-indicator ${state.saving ? "saving" : ""}" ${state.status ? "" : "hidden"}>${escapeHtml(state.status)}</span>
                 <button id="ps_btn_save_close" type="button" class="ps-modern-btn primary" data-action="close">${icon("fa-save")} Save & Close</button>
               </div>
             </div>
@@ -959,7 +961,8 @@ function wire(container) {
       const value = readInputValue(input);
       setPath(state.profile, path, value);
       saveProfileSoon();
-      render();
+      if (shouldRenderAfterBind(input))
+        render();
     });
     if (input.tagName === "TEXTAREA" || input.type === "text" || input.type === "number" || input.type === "range") {
       input.addEventListener("input", () => {
@@ -1046,6 +1049,13 @@ function wire(container) {
     reader.readAsText(file);
   });
 }
+function shouldRenderAfterBind(input) {
+  if (input instanceof HTMLSelectElement)
+    return true;
+  if (input instanceof HTMLInputElement && input.type === "checkbox")
+    return true;
+  return false;
+}
 function mountDnrPanel(container) {
   const mount = container.querySelector("#dnr_mount");
   if (!mount || mount.querySelector("#dnr_panel"))
@@ -1119,22 +1129,46 @@ function readInputValue(input) {
 var saveTimer = null;
 var profileDirty = false;
 var savePromise = null;
+var statusClearTimer = null;
+function updateSaveIndicator() {
+  const indicator = appMount?.root?.querySelector?.("#ps_save_indicator");
+  if (!indicator)
+    return;
+  indicator.textContent = state.status;
+  indicator.hidden = !state.status;
+  indicator.classList.toggle("saving", state.saving);
+}
+function setStatus(message, options = {}) {
+  if (statusClearTimer) {
+    window.clearTimeout(statusClearTimer);
+    statusClearTimer = null;
+  }
+  state.status = message;
+  state.saving = !!options.saving;
+  updateSaveIndicator();
+  if (message && options.autoClear) {
+    statusClearTimer = window.setTimeout(() => {
+      if (state.status !== message)
+        return;
+      state.status = "";
+      state.saving = false;
+      updateSaveIndicator();
+      statusClearTimer = null;
+    }, 1500);
+  }
+}
 async function saveProfileToBackend() {
-  state.saving = true;
-  state.status = "Saving...";
+  setStatus("Saving...", { saving: true });
   try {
     const data = await request("profile:save", { profile: state.profile, scope: state.context?.scope });
     state.profile = mergeProfile(data.profile);
     await refreshPresetAudit();
-    state.status = "Saved";
+    setStatus("Saved", { autoClear: true });
     return true;
   } catch (err) {
     profileDirty = true;
-    state.status = err instanceof Error ? err.message : "Save failed";
+    setStatus(err instanceof Error ? err.message : "Save failed");
     return false;
-  } finally {
-    state.saving = false;
-    render();
   }
 }
 async function flushProfileSave() {
@@ -1158,8 +1192,7 @@ function saveProfileSoon() {
   if (saveTimer)
     window.clearTimeout(saveTimer);
   profileDirty = true;
-  state.saving = true;
-  state.status = "Saving...";
+  setStatus("Saving...", { saving: true });
   saveTimer = window.setTimeout(() => {
     flushProfileSave();
   }, 250);
@@ -2922,7 +2955,7 @@ function styles() {
 .ps-switch::after { content:""; width:20px; height:20px; border-radius:50%; background:#fff; position:absolute; top:2px; left:2px; transition:.3s; box-shadow:0 2px 4px rgba(0,0,0,.2); }
 .mtab-toggle-row.active .ps-switch { background:#f59e0b; }
 .mtab-toggle-row.active .ps-switch::after { left:22px; background:#111; }
-.mtab-panel, .wstyle-dnr-panel { background:#18191f; border:1px solid #27272a; border-radius:8px; padding:16px; }
+.mtab-panel { background:#18191f; border:1px solid #27272a; border-radius:8px; padding:16px; }
 .mtab-panel-title { margin:0 0 14px; color:#f4f4f5; font-weight:900; font-size:15px; display:flex; align-items:center; gap:8px; }
 .mtab-panel-title.gold { color:#f59e0b; }
 .mtab-panel-title.green { color:#10b981; }

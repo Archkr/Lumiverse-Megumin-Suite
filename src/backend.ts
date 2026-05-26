@@ -73,23 +73,18 @@ const UTILITY_TRIGGERS: Record<UtilityTrigger, string> = {
 };
 
 async function readJson<T>(path: string, fallback: T, userId?: string): Promise<T> {
+  void userId;
   try {
-    const raw = await spindle.userStorage.read(path, userId);
+    const raw = await spindle.storage.read(path);
     return JSON.parse(raw) as T;
   } catch {
-    try {
-      const raw = await spindle.storage.read(path);
-      const parsed = JSON.parse(raw) as T;
-      await writeJson(path, parsed, userId).catch(() => undefined);
-      return parsed;
-    } catch {
-      return clone(fallback);
-    }
+    return clone(fallback);
   }
 }
 
 async function writeJson(path: string, value: unknown, userId?: string): Promise<void> {
-  await spindle.userStorage.setJson(path, value, { indent: 2, userId });
+  void userId;
+  await spindle.storage.write(path, JSON.stringify(value, null, 2));
 }
 
 function profilePath(scope: string): string {
@@ -325,16 +320,12 @@ async function loadUiAssets(context: ChatContext): Promise<{ heroImages: string[
 }
 
 async function listProfileFiles(userId?: string): Promise<string[]> {
+  void userId;
   const files = new Set<string>();
-  try {
-    for (const file of await spindle.userStorage.list("profiles/", userId)) files.add(String(file));
-  } catch {
-    // User storage may be empty on first migration.
-  }
   try {
     for (const file of await spindle.storage.list("profiles/")) files.add(String(file));
   } catch {
-    // Legacy storage may not have profile files.
+    // Extension storage may not have profile files yet.
   }
   return [...files];
 }

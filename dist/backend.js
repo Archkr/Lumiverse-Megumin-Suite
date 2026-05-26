@@ -3583,23 +3583,14 @@ var UTILITY_TRIGGERS = {
 };
 async function readJson(path, fallback, userId) {
   try {
-    const raw = await spindle.userStorage.read(path, userId);
+    const raw = await spindle.storage.read(path);
     return JSON.parse(raw);
   } catch {
-    try {
-      const raw = await spindle.storage.read(path);
-      const parsed = JSON.parse(raw);
-      await writeJson(path, parsed, userId).catch(() => {
-        return;
-      });
-      return parsed;
-    } catch {
-      return clone(fallback);
-    }
+    return clone(fallback);
   }
 }
 async function writeJson(path, value, userId) {
-  await spindle.userStorage.setJson(path, value, { indent: 2, userId });
+  await spindle.storage.write(path, JSON.stringify(value, null, 2));
 }
 function profilePath(scope) {
   return `profiles/${scope}.json`;
@@ -3799,10 +3790,6 @@ async function loadUiAssets(context) {
 }
 async function listProfileFiles(userId) {
   const files = new Set;
-  try {
-    for (const file of await spindle.userStorage.list("profiles/", userId))
-      files.add(String(file));
-  } catch {}
   try {
     for (const file of await spindle.storage.list("profiles/"))
       files.add(String(file));

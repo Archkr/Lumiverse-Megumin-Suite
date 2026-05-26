@@ -72,7 +72,10 @@ describe("Megumin UI parity audit", () => {
       "CHAT_CHANGED",
       "CHARACTER_AVATAR_CHANGED",
       "characterAvatarUrl",
-      "heroName"
+      "heroName",
+      "updateSaveIndicator",
+      "statusClearTimer",
+      "shouldRenderAfterBind"
     ];
     for (const label of requiredLabels) expect(frontendSource).toContain(label);
 
@@ -100,9 +103,14 @@ describe("Megumin UI parity audit", () => {
     expect(backendSource).toContain("npc:uploadPortrait");
     expect(backendSource).toContain("spindle.images.uploadFromDataUrl");
     expect(backendSource).toContain("force_preset_id");
-    expect(backendSource).toContain("spindle.userStorage");
     expect(backendSource).toContain("spindle.storage.read(path)");
+    expect(backendSource).toContain("spindle.storage.write(path");
+    expect(backendSource).not.toContain("spindle.userStorage");
     expect(backendSource).toContain("safeProfileScope");
+    expect(frontendSource).not.toContain(".mtab-panel, .wstyle-dnr-panel");
+    expect(frontendSource).toContain(".wstyle-dnr-label.narr { color:#a855f7");
+    expect(frontendSource).toContain(".wstyle-dnr-label.dial { color:#10b981");
+    expect(frontendSource).toContain("if (shouldRenderAfterBind(input)) render();");
   });
 });
 
