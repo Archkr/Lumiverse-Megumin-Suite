@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { clone, mergeProfile } from "./defaults";
-import { REQUIRED_PLACEHOLDER_FEATURES, buildPromptMessages, estimateMeguminPayloadTokens } from "./prompt-engine";
+import { REQUIRED_PLACEHOLDER_FEATURES, auditPresetPlaceholders, buildPromptMessages, estimateMeguminPayloadTokens } from "./prompt-engine";
 import { extractNpcBlocks, relevantChunks } from "./text";
 import { patchComfyWorkflow } from "./image-workflow";
 import { DEFAULT_PROFILE } from "./defaults";
@@ -136,6 +136,75 @@ describe("Megumin preset bridge", () => {
     expect(backendSource).toContain("___PS_STORY_PLAN___");
     expect(backendSource).toContain("___PS_IMAGE_GEN___");
     expect(backendSource).toContain("___PS_MEMORY_SUMMARIZE___");
+  });
+});
+
+describe("Megumin preset contract audit", () => {
+  const featureById = (features: ReturnType<typeof auditPresetPlaceholders>, id: string) => {
+    const feature = features.find((item) => item.id === id);
+    expect(feature).toBeTruthy();
+    return feature!;
+  };
+
+  test("accepts official DS4 double-bracket core placeholders without single-bracket aliases", () => {
+    const features = auditPresetPlaceholders([
+      "[[prompt1]]",
+      "[[prompt2]]",
+      "[[prompt3]]",
+      "[[prompt4]]",
+      "[[prompt5]]",
+      "[[prompt6]]",
+      "[[main]]",
+      "[[AI1]]",
+      "[[AI2]]",
+      "[[OOC]]",
+      "[[control]]"
+    ], true);
+    const core = featureById(features, "core-engines");
+
+    expect(core.connected).toBe(true);
+    expect(core.missing).toEqual([]);
+    expect(core.present).not.toContain("[prompt1]");
+  });
+
+  test("treats single-bracket prompt hooks as aliases instead of separate requirements", () => {
+    const features = auditPresetPlaceholders([
+      "[prompt1]",
+      "[prompt2]",
+      "[prompt3]",
+      "[prompt4]",
+      "[prompt5]",
+      "[prompt6]",
+      "[[main]]",
+      "[[AI1]]",
+      "[[AI2]]",
+      "[[OOC]]",
+      "[[control]]"
+    ], true);
+    const core = featureById(features, "core-engines");
+
+    expect(core.connected).toBe(true);
+    expect(core.missing).toEqual([]);
+    expect(core.present).toContain("[prompt1]");
+  });
+
+  test("does not manufacture per-tab missing-hook spam when no suite preset was scanned", () => {
+    const features = auditPresetPlaceholders([], false);
+
+    expect(features.every((feature) => feature.connected)).toBe(true);
+    expect(features.flatMap((feature) => feature.missing)).toEqual([]);
+  });
+
+  test("reports compact hook labels for truly missing scanned preset hooks", () => {
+    const features = auditPresetPlaceholders(["[[prompt1]]", "[[main]]"], true);
+    const core = featureById(features, "core-engines");
+
+    expect(core.connected).toBe(false);
+    expect(core.missing).toContain("prompt2 hook");
+    expect(core.missing).not.toContain("[[prompt2]]");
+    expect(frontendSource).toContain("presetStatusWarning");
+    expect(frontendSource).toContain("payloadTokenLabel");
+    expect(frontendSource).not.toContain("feature.missing.map((placeholder) => `${feature.label}: ${placeholder}`)");
   });
 });
 

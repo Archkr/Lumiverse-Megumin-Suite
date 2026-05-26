@@ -116,12 +116,14 @@ type AppState = {
   presetBridge: { available: boolean; enginePresetId?: string; imagePresetId?: string; suiteDs4PresetId?: string; suiteGeminiPresetId?: string; missing?: string[] };
   presetAudit: {
     available?: boolean;
+    statusMessage?: string;
     features?: Array<{ id: string; label: string; placeholders: string[]; present: string[]; missing: string[]; connected: boolean }>;
     missingFeatures?: string[];
     missingPlaceholders?: string[];
     presentPlaceholders?: string[];
     payloadEstimateTokens?: number;
     payloadEstimateSource?: "preset-audit" | "fallback";
+    scannedPresetIds?: string[];
     scannedPresetNames?: string[];
   };
   status: string;
@@ -409,7 +411,7 @@ function render() {
             <div class="hero-overlay"></div>
             <div class="top-app-bar">
               <div class="app-actions">
-                <div class="live-token-count" title="${escapeHtml(payloadTokenTitle())}">${icon("fa-microchip")} ~${payloadTokenCount()}</div>
+                <div class="live-token-count" title="${escapeHtml(payloadTokenTitle())}">${icon("fa-microchip")} ${escapeHtml(payloadTokenLabel())}</div>
                 <button id="btn_apply_tab_all" type="button" class="ps-modern-btn secondary gold" data-action="sync-tab">${icon("fa-earth-americas")} Sync Tab Globally</button>
                 <button id="ps_btn_reset_rule" type="button" class="ps-modern-btn secondary danger" data-action="reset">${icon("fa-rotate-left")} Reset</button>
                 <button id="ps_btn_dev_mode" type="button" class="ps-modern-btn secondary purple ${state.devMode ? "active" : ""}" data-action="open-dev">${icon("fa-code")} ${state.devMode ? "Exit Dev" : "Dev"}</button>
@@ -1168,6 +1170,7 @@ function renderEngines(): string {
 
   return `
     ${tabHeader("Core Engines", "Choose the narrative engine that drives your AI's behavior.", "fa-microchip", "#f59e0b", active?.label || state.profile.mode, "#10b981", "fa-circle-check")}
+    ${presetStatusWarning()}
     ${presetFeatureWarning(["core-engines"])}
     <div class="wstyle-filters">
       ${["all", "V4", "V5", "V6", "V7"].map((filter) => filterPill(filter, state.engineFilter === filter, engineCount(filter))).join("")}
@@ -1940,9 +1943,16 @@ function presetFeatureWarning(featureIds: string[]): string {
   if (!features.length) return "";
   const missing = features
     .filter((feature) => featureIds.includes(feature.id) && feature.missing.length > 0)
-    .flatMap((feature) => feature.missing.map((placeholder) => `${feature.label}: ${placeholder}`));
+    .flatMap((feature) => feature.missing.map((hook) => `${feature.label}: ${hook}`));
   if (!missing.length) return "";
   return `<div class="mtab-callout gold preset-warning">${icon("fa-triangle-exclamation")} <span><strong>Preset hook missing:</strong> ${escapeHtml(missing.join(", "))}</span></div>`;
+}
+
+function presetStatusWarning(): string {
+  const message = state.presetAudit?.statusMessage || "";
+  const hasFeatureMisses = (state.presetAudit?.features || []).some((feature) => feature.missing.length > 0);
+  if (!message || hasFeatureMisses) return "";
+  return `<div class="mtab-callout gold preset-warning">${icon("fa-triangle-exclamation")} <span>${escapeHtml(message)}</span></div>`;
 }
 
 function lockedState(iconName: string, title: string, text: string): string {
@@ -2143,6 +2153,11 @@ function estimatePayloadTokens(): number {
 function payloadTokenCount(): number {
   const audited = Number(state.presetAudit?.payloadEstimateTokens);
   return Number.isFinite(audited) && audited >= 0 ? audited : estimatePayloadTokens();
+}
+
+function payloadTokenLabel(): string {
+  const count = payloadTokenCount();
+  return state.presetAudit?.payloadEstimateSource === "preset-audit" ? `~${count}` : `~${count} fallback`;
 }
 
 function payloadTokenTitle(): string {

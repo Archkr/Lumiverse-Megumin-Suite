@@ -106,20 +106,121 @@ const UNUSED_PLACEHOLDERS = [
   "[[npc list]]"
 ];
 
+export type PlaceholderHookGroup = {
+  label: string;
+  aliases: string[];
+};
+
+export type PlaceholderFeatureSpec = {
+  id: string;
+  label: string;
+  hooks: PlaceholderHookGroup[];
+  placeholders: string[];
+};
+
+function featureSpec(id: string, label: string, hooks: PlaceholderHookGroup[]): PlaceholderFeatureSpec {
+  return {
+    id,
+    label,
+    hooks,
+    placeholders: [...new Set(hooks.flatMap((hook) => hook.aliases))]
+  };
+}
+
 export const REQUIRED_PLACEHOLDER_FEATURES = [
-  { id: "core-engines", label: "Core Engines", placeholders: ["[[prompt1]]", "[[prompt2]]", "[[prompt3]]", "[[prompt4]]", "[[prompt5]]", "[[prompt6]]", "[prompt1]", "[prompt2]", "[prompt3]", "[prompt4]", "[prompt5]", "[prompt6]", "[[main]]", "[[AI1]]", "[[AI2]]", "[[OOC]]", "[[control]]"] },
-  { id: "writing-style", label: "Writing Style", placeholders: ["[[aiprompt]]"] },
-  { id: "global-settings", label: "Global Settings", placeholders: ["[[Language]]", "[[pronouns]]", "[[count]]"] },
-  { id: "gameplay-addons", label: "Gameplay Add-ons", placeholders: ["[[death]]", "[[combat]]", "[[Direct]]", "[[DN]]", "[[COLOR]]", "[[npc_events]]", "[[onomato]]"] },
-  { id: "response-blocks", label: "Response Blocks", placeholders: ["[[infoblock]]", "[[summary]]", "[[cyoa]]", "[[cyoa2]]", "[[MVU]]", "[[npc_inner_chatter]]", "[[npc_inner_chatter2]]"] },
-  { id: "chain-of-thought", label: "Chain of Thought", placeholders: ["[[COT]]", "[[prefill]]", "[[THINK]]"] },
-  { id: "story-planner", label: "Story Planner", placeholders: ["[[storyplan]]", "[[storytracker]]", "[[storytracker2]]"] },
-  { id: "image-generation", label: "Image Generation", placeholders: ["[[img1]]", "[[img2]]"] },
-  { id: "npc-bank", label: "NPC Bank", placeholders: ["[[npc list]]", "[[npc_dossier]]", "[[npc_dossier2]]"] },
-  { id: "memory-core", label: "Memory Core", placeholders: ["[[long-Memory]]", "[[Short-memory]]"] },
-  { id: "dynamic-ban-list", label: "Dynamic Ban List", placeholders: ["[[banlist]]"] },
-  { id: "dialogue-narration", label: "Dialogue / Narration Ratio", placeholders: ["[[DNRATIO]]"] }
+  featureSpec("core-engines", "Core Engines", [
+    { label: "prompt1 hook", aliases: ["[[prompt1]]", "[prompt1]"] },
+    { label: "prompt2 hook", aliases: ["[[prompt2]]", "[prompt2]"] },
+    { label: "prompt3 hook", aliases: ["[[prompt3]]", "[prompt3]"] },
+    { label: "prompt4 hook", aliases: ["[[prompt4]]", "[prompt4]"] },
+    { label: "prompt5 hook", aliases: ["[[prompt5]]", "[prompt5]"] },
+    { label: "prompt6 hook", aliases: ["[[prompt6]]", "[prompt6]"] },
+    { label: "main personality hook", aliases: ["[[main]]"] },
+    { label: "AI1 prefill hook", aliases: ["[[AI1]]"] },
+    { label: "AI2 prefill hook", aliases: ["[[AI2]]"] },
+    { label: "OOC hook", aliases: ["[[OOC]]"] },
+    { label: "control hook", aliases: ["[[control]]"] }
+  ]),
+  featureSpec("writing-style", "Writing Style", [{ label: "style hook", aliases: ["[[aiprompt]]"] }]),
+  featureSpec("global-settings", "Global Settings", [
+    { label: "language hook", aliases: ["[[Language]]"] },
+    { label: "pronouns hook", aliases: ["[[pronouns]]"] },
+    { label: "word count hook", aliases: ["[[count]]"] }
+  ]),
+  featureSpec("gameplay-addons", "Gameplay Add-ons", [
+    { label: "death hook", aliases: ["[[death]]"] },
+    { label: "combat hook", aliases: ["[[combat]]"] },
+    { label: "directness hook", aliases: ["[[Direct]]"] },
+    { label: "deep narration hook", aliases: ["[[DN]]"] },
+    { label: "dialogue color hook", aliases: ["[[COLOR]]"] },
+    { label: "NPC events hook", aliases: ["[[npc_events]]"] },
+    { label: "onomatopoeia hook", aliases: ["[[onomato]]"] }
+  ]),
+  featureSpec("response-blocks", "Response Blocks", [
+    { label: "info block hook", aliases: ["[[infoblock]]"] },
+    { label: "summary hook", aliases: ["[[summary]]"] },
+    { label: "CYOA hook", aliases: ["[[cyoa]]"] },
+    { label: "CYOA display hook", aliases: ["[[cyoa2]]"] },
+    { label: "MVU hook", aliases: ["[[MVU]]"] },
+    { label: "NPC inner chatter hook", aliases: ["[[npc_inner_chatter]]"] },
+    { label: "NPC inner chatter display hook", aliases: ["[[npc_inner_chatter2]]"] }
+  ]),
+  featureSpec("chain-of-thought", "Chain of Thought", [
+    { label: "CoT framework hook", aliases: ["[[COT]]"] },
+    { label: "prefill hook", aliases: ["[[prefill]]"] },
+    { label: "thinking hook", aliases: ["[[THINK]]"] }
+  ]),
+  featureSpec("story-planner", "Story Planner", [
+    { label: "story plan hook", aliases: ["[[storyplan]]"] },
+    { label: "story tracker hook", aliases: ["[[storytracker]]"] },
+    { label: "story tracker display hook", aliases: ["[[storytracker2]]"] }
+  ]),
+  featureSpec("image-generation", "Image Generation", [
+    { label: "image instruction hook", aliases: ["[[img1]]"] },
+    { label: "image tag hook", aliases: ["[[img2]]"] }
+  ]),
+  featureSpec("npc-bank", "NPC Bank", [
+    { label: "NPC list hook", aliases: ["[[npc list]]"] },
+    { label: "NPC dossier hook", aliases: ["[[npc_dossier]]"] },
+    { label: "NPC dossier display hook", aliases: ["[[npc_dossier2]]"] }
+  ]),
+  featureSpec("memory-core", "Memory Core", [
+    { label: "long memory hook", aliases: ["[[long-Memory]]"] },
+    { label: "short memory hook", aliases: ["[[Short-memory]]"] }
+  ]),
+  featureSpec("dynamic-ban-list", "Dynamic Ban List", [{ label: "ban list hook", aliases: ["[[banlist]]"] }]),
+  featureSpec("dialogue-narration", "Dialogue / Narration Ratio", [{ label: "D/N ratio hook", aliases: ["[[DNRATIO]]"] }])
 ] as const;
+
+export type PlaceholderFeatureAudit = {
+  id: string;
+  label: string;
+  placeholders: string[];
+  present: string[];
+  missing: string[];
+  connected: boolean;
+};
+
+export function auditPresetPlaceholders(presentPlaceholders: Iterable<string>, hasScannedPreset: boolean): PlaceholderFeatureAudit[] {
+  const presentSet = new Set(presentPlaceholders);
+  return REQUIRED_PLACEHOLDER_FEATURES.map((feature) => {
+    const placeholders = [...feature.placeholders];
+    const present = placeholders.filter((placeholder) => presentSet.has(placeholder));
+    const missing = hasScannedPreset
+      ? feature.hooks
+        .filter((hook) => !hook.aliases.some((placeholder) => presentSet.has(placeholder)))
+        .map((hook) => hook.label)
+      : [];
+    return {
+      id: feature.id,
+      label: feature.label,
+      placeholders,
+      present,
+      missing,
+      connected: missing.length === 0
+    };
+  });
+}
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

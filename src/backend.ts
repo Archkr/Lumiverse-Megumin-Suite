@@ -1,6 +1,7 @@
 import { DEFAULT_PROFILE, EXTENSION_NAME, clone, mergeProfile } from "./defaults";
 import {
   REQUIRED_PLACEHOLDER_FEATURES,
+  auditPresetPlaceholders,
   buildPromptMessages,
   estimateMeguminPayloadTokens,
   getLogic,
@@ -181,6 +182,7 @@ type PresetContractAudit = {
   available: boolean;
   scannedPresetIds: string[];
   scannedPresetNames: string[];
+  statusMessage?: string;
   presentPlaceholders: string[];
   missingPlaceholders: string[];
   missingFeatures: string[];
@@ -198,6 +200,13 @@ function presetBlockText(block: any): string {
     block?.name,
     ...(Array.isArray(block?.injectionTrigger) ? block.injectionTrigger : [])
   ];
+  if (Array.isArray(block?.prompt_order)) {
+    parts.push(
+      ...block.prompt_order
+        .filter((child: any) => child?.enabled !== false)
+        .map(presetBlockText)
+    );
+  }
   return parts.filter((part) => typeof part === "string" && part.trim()).join("\n");
 }
 
@@ -240,31 +249,29 @@ async function presetContractAudit(
     }
   }
 
-  const features = REQUIRED_PLACEHOLDER_FEATURES.map((feature) => {
-    const placeholders = [...feature.placeholders];
-    const present = placeholders.filter((placeholder) => presentPlaceholders.has(placeholder));
-    const missing = placeholders.filter((placeholder) => !presentPlaceholders.has(placeholder));
-    return {
-      id: feature.id,
-      label: feature.label,
-      placeholders,
-      present,
-      missing,
-      connected: missing.length === 0
-    };
-  });
   const hasScannedPreset = scannedPresetIds.length > 0;
-  const estimateSet = hasScannedPreset ? presentPlaceholders : undefined;
+  const hasDetectedHooks = presentPlaceholders.size > 0;
+  const canEvaluateHooks = hasScannedPreset && hasDetectedHooks;
+  const features = auditPresetPlaceholders(presentPlaceholders, canEvaluateHooks);
+  const estimateSet = hasDetectedHooks ? presentPlaceholders : undefined;
+  const statusMessage = !available
+    ? "Lumiverse preset access is unavailable."
+    : !hasScannedPreset
+      ? "Uploaded Megumin Suite V7 preset not detected. Import the Megumin Suite preset in Lumiverse, then refresh Megumin Suite."
+      : !hasDetectedHooks
+        ? "Megumin Suite preset was found, but no Megumin placeholder hooks were detected in its prompt blocks."
+        : undefined;
   return {
     available,
     scannedPresetIds,
     scannedPresetNames,
+    statusMessage,
     presentPlaceholders: [...presentPlaceholders].sort(),
     missingPlaceholders: [...new Set(features.flatMap((feature) => feature.missing))].sort(),
     missingFeatures: features.filter((feature) => !feature.connected).map((feature) => feature.id),
     features,
     payloadEstimateTokens: estimateMeguminPayloadTokens(profile, customEngines, chatMessages, context, estimateSet),
-    payloadEstimateSource: hasScannedPreset ? "preset-audit" : "fallback",
+    payloadEstimateSource: hasDetectedHooks ? "preset-audit" : "fallback",
     updatedAt: Date.now()
   };
 }
