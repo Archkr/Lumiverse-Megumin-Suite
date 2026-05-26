@@ -83,7 +83,7 @@ Tired of the AI saying *"a shiver ran down your spine"* or *"testament to..."*?
    ```text
    https://github.com/Archkr/Lumiverse-Megumin-Suite
    ```
-5. Download the Lumiverse preset JSON files and regex scripts from the Megumin Suite preset package.
+5. Download the Lumiverse preset JSONs files from this repo: https://github.com/Archkr/Lumiverse-Megumin-Suite/tree/main/Presets
 > ⚠️ **Note:** If you download these on your phone and your browser renames them to `.json.txt`, you **must** use a file manager to rename them and delete the `.txt` part. Furthermore, make sure the Engine file is named EXACTLY `Megumin Engine.json` before you import it. The Suite file's name doesn't matter, but the Engine must be exact.
 6. Open Lumiverse, go to the **Loom** tab.
 7. Click the **Import Loom** button (the 3 stacked dots) and upload the json files.
