@@ -1088,9 +1088,9 @@ async function handleAction(el) {
       return;
     }
     if (action === "preset-ensure") {
-      const data = await request("preset:ensureBridge", { kind: el.dataset.kind || "engine" });
+      const data = await request("preset:resolve", { kind: el.dataset.kind || "engine" });
       state.presetBridge = data.presetBridge || state.presetBridge;
-      state.status = "Preset ready";
+      state.status = data.preset?.name ? `${data.preset.name} found` : "Preset missing";
       render();
       return;
     }

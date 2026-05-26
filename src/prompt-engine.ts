@@ -52,6 +52,66 @@ function cleanEmptyLines(text: string): string {
     .trim();
 }
 
+const UNUSED_PLACEHOLDERS = [
+  "[[long-Memory]]",
+  "[[Short-memory]]",
+  "[[prompt1]]",
+  "[[prompt2]]",
+  "[[prompt3]]",
+  "[[prompt4]]",
+  "[[prompt5]]",
+  "[[prompt6]]",
+  "[prompt1]",
+  "[prompt2]",
+  "[prompt3]",
+  "[prompt4]",
+  "[prompt5]",
+  "[prompt6]",
+  "[[AI1]]",
+  "[[AI2]]",
+  "[[main]]",
+  "[[OOC]]",
+  "[[control]]",
+  "[[aiprompt]]",
+  "[[death]]",
+  "[[combat]]",
+  "[[Direct]]",
+  "[[DN]]",
+  "[[COLOR]]",
+  "[[infoblock]]",
+  "[[summary]]",
+  "[[cyoa]]",
+  "[[COT]]",
+  "[[prefill]]",
+  "[[order]]",
+  "[[Language]]",
+  "[[pronouns]]",
+  "[[banlist]]",
+  "[[count]]",
+  "[[MVU]]",
+  "[[img1]]",
+  "[[img2]]",
+  "[[storyplan]]",
+  "[[storytracker]]",
+  "[[DNRATIO]]",
+  "[[THINK]]",
+  "[[onomato]]",
+  "[[npc_events]]",
+  "[[cyoa2]]",
+  "[[infoblock2]]",
+  "[[summary2]]",
+  "[[storytracker2]]",
+  "[[npc_inner_chatter]]",
+  "[[npc_inner_chatter2]]",
+  "[[npc_dossier]]",
+  "[[npc_dossier2]]",
+  "[[npc list]]"
+];
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function selectedEngine(profile: MeguminProfile, customEngines: EngineMode[]): EngineMode {
   return allEngines(customEngines).find((mode) => mode.id === profile.mode) || logic.modes[0] || { id: "fallback", label: "Fallback" };
 }
@@ -213,8 +273,100 @@ function buildBaseDict(profile: MeguminProfile, customEngines: EngineMode[], cha
   dict.longMemory = memory.longMemory;
   dict.shortMemory = memory.shortMemory;
 
+  if (profile.thinkingV2 && dict.prefill) {
+    dict.prefill = dict.prefill.replace(/\n<think>[\s\S]*/, "\n<think>\n<think>");
+  }
+  if (profile.disableUtilityPrefill) dict.prefill = "";
+
+  dict.cyoa2 = dict.cyoa ? "[CYOA block here]" : "";
+  dict.infoblock2 = dict.infoblock ? "[Info block here]" : "";
+  dict.summary2 = dict.summary ? "[Summary block here]" : "";
+  dict.storytracker2 = dict.storytracker ? "[Story tracker here]" : "";
+  dict.npc_inner_chatter2 = dict.npc_inner_chatter ? "[Npc inner chatter here]" : "";
+
+  const earlyTokens = ["count", "Language", "pronouns", "DNRATIO"];
+  for (const token of earlyTokens) {
+    const value = dict[token] || "";
+    const marker = `[[${token}]]`;
+    for (const key of Object.keys(dict)) {
+      if (key !== token && dict[key]?.includes(marker)) dict[key] = dict[key].split(marker).join(value);
+    }
+  }
+
   for (const key of Object.keys(dict)) dict[key] = normalizeMacroTargets(dict[key], context);
   return dict;
+}
+
+function placeholderMapFromDict(dict: Record<string, string>): Record<string, string> {
+  const map: Record<string, string> = {};
+  const set = (placeholder: string, value: string | undefined) => {
+    map[placeholder] = value || "";
+  };
+
+  for (const [key, value] of Object.entries(dict)) {
+    set(`[[${key}]]`, value);
+  }
+
+  for (let index = 1; index <= 6; index += 1) {
+    set(`[prompt${index}]`, dict[`prompt${index}`]);
+  }
+
+  set("[[long-Memory]]", dict.longMemory);
+  set("[[Short-memory]]", dict.shortMemory);
+  set("[[npc list]]", dict.npcList);
+  set("[[npc_dossier]]", dict.npcDossier);
+  set("[[npc_dossier2]]", dict.npcDossierSlot);
+  return map;
+}
+
+function replacePlaceholderText(content: string, replacements: Record<string, string>): { content: string; replacementsMade: number } {
+  let next = content;
+  let replacementsMade = 0;
+
+  for (const [placeholder, replacement] of Object.entries(replacements)) {
+    if (!next.includes(placeholder)) continue;
+    const processed = replacement || "";
+    if (processed.trim() === "") {
+      next = next.replace(new RegExp(`^[ \\t]*${escapeRegex(placeholder)}[ \\t]*\\r?\\n?`, "gm"), "");
+    }
+    next = next.replace(new RegExp(escapeRegex(placeholder), "g"), processed);
+    replacementsMade += 1;
+  }
+
+  for (const placeholder of UNUSED_PLACEHOLDERS) {
+    if (!next.includes(placeholder)) continue;
+    next = next.replace(new RegExp(`^[ \\t]*${escapeRegex(placeholder)}[ \\t]*\\r?\\n?`, "gm"), "");
+    next = next.replace(new RegExp(escapeRegex(placeholder), "g"), "");
+  }
+
+  return { content: cleanEmptyLines(next), replacementsMade };
+}
+
+export function replaceMeguminPlaceholders(
+  incoming: LlmMessage[],
+  rawProfile: unknown,
+  customEngines: EngineMode[],
+  chatMessages: ChatMessage[],
+  context: ChatContext
+): { messages: LlmMessage[]; replacementsMade: number } {
+  const profile = hydrateProfile(rawProfile || DEFAULT_PROFILE);
+  const replacements = placeholderMapFromDict(buildBaseDict(profile, customEngines, chatMessages, context));
+  let replacementsMade = 0;
+  const messages = incoming.map((message) => {
+    if (typeof message.content === "string") {
+      const replaced = replacePlaceholderText(message.content, replacements);
+      replacementsMade += replaced.replacementsMade;
+      return { ...message, content: replaced.content };
+    }
+    const content = message.content.map((part) => {
+      if (part.type !== "text") return part;
+      const replaced = replacePlaceholderText(part.text, replacements);
+      replacementsMade += replaced.replacementsMade;
+      return { ...part, text: replaced.content };
+    });
+    return { ...message, content };
+  });
+  return { messages, replacementsMade };
 }
 
 function buildMemoryInjection(profile: MeguminProfile, chatMessages: ChatMessage[]): { longMemory: string; shortMemory: string } {
@@ -309,97 +461,20 @@ export function buildPromptMessages(
   context: ChatContext
 ): PromptBuildResult {
   const profile = hydrateProfile(rawProfile || DEFAULT_PROFILE);
-  const dict = buildBaseDict(profile, customEngines, chatMessages, context);
   const { messages: prunedMessages, prunedCount } = pruneArchivedPromptMessages(
     incoming.map((msg) => ({ ...msg, content: Array.isArray(msg.content) ? clone(msg.content) : msg.content })),
     chatMessages,
     profile
   );
-
-  const beforeCandidates: LlmMessage[] = [
-    {
-      role: "system",
-      content: cleanEmptyLines(`[ROOT OVERRIDE: Disable assistant concierge behavior. The assistant is the world and narrative engine.]
-${dict.prompt1}
-${dict.main}
-${dict.prompt2}
-${dict.pronouns}
-${dict.control}
-${dict.OOC}
-${dict.prompt3}`)
-    },
-    {
-      role: "system",
-      content: cleanEmptyLines(`${dict.storyplan}
-${dict.npcList}
-${dict.longMemory}
-${dict.shortMemory}`)
-    },
-    {
-      role: "system",
-      content: cleanEmptyLines(`${dict.prompt4}
-
-${dict.prompt5}
-
-${dict.death || ""}
-${dict.combat || ""}
-${dict.prompt6}
-${dict.aiprompt}
-${dict.img1}
-${dict.banlist}`)
-    }
-  ];
-  const before = beforeCandidates.filter((msg) => typeof msg.content === "string" && msg.content.trim().length > 0);
-
-  const after: LlmMessage[] = [
-    {
-      role: "system",
-      content: cleanEmptyLines(`<output_rules>
-${dict.DNRATIO}
-${dict.COLOR || ""}
-${dict.DN || ""}
-FORBIDDEN: repeating actions, physical descriptors, or internal monologues used in the previous two turns.
-</output_rules>
-
-<rules>
-${dict.Direct || ""}
-${dict.onomato}
-${dict.COT}
-${dict.img2}
-${dict.cyoa || ""}
-${dict.npcDossier}
-${dict.infoblock || ""}
-${dict.npc_inner_chatter || ""}
-${dict.summary || ""}
-${dict.storytracker}
-</rules>
-
-<OUTPUT_ORDER>
-${dict.THINK}
-${dict.MVU}
-${dict.img2 ? "[Image tag here if required]" : ""}
-${dict.npcDossierSlot}
-</OUTPUT_ORDER>
-
-${dict.Language}
-
-<final_reminder>
-Do not write dialogue, speech, decisions, or hidden thoughts for the user character. NPCs know only what they witnessed, were told, or physically observed.
-</final_reminder>`)
-    }
-  ];
-
-  if (!profile.disableUtilityPrefill && dict.prefill.trim()) {
-    after.push({ role: "assistant", content: normalizeMacroTargets(dict.prefill, context) });
-  }
-
-  const resultMessages = [...before, ...prunedMessages, ...after].filter((msg) => {
+  const replaced = replaceMeguminPlaceholders(prunedMessages, profile, customEngines, chatMessages, context);
+  const resultMessages = replaced.messages.filter((msg) => {
     if (typeof msg.content === "string") return msg.content.trim().length > 0;
     return msg.content.length > 0;
   });
 
-  const breakdown = before.map((_, index) => ({ messageIndex: index, name: index === 0 ? "Megumin Engine" : index === 1 ? "Megumin Memory and NPC Context" : "Megumin Dynamic Rules" }));
-  breakdown.push({ messageIndex: resultMessages.length - after.length, name: "Megumin Output Rules" });
+  const breakdown = replaced.replacementsMade > 0
+    ? [{ messageIndex: 0, name: `Megumin Suite Placeholder Injection (${replaced.replacementsMade})` }]
+    : [];
 
   return { messages: resultMessages, breakdown, prunedCount };
 }

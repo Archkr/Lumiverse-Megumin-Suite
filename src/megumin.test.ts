@@ -9,7 +9,6 @@ import type { ChatContext, ChatMessage, LlmMessage, MemoryChunk } from "./types"
 
 const frontendSource = readFileSync(new URL("./frontend.ts", import.meta.url), "utf8");
 const backendSource = readFileSync(new URL("./backend.ts", import.meta.url), "utf8");
-const presetSeedsSource = readFileSync(new URL("./preset-seeds.ts", import.meta.url), "utf8");
 const spindleManifest = JSON.parse(readFileSync(new URL("../spindle.json", import.meta.url), "utf8")) as { permissions: string[] };
 
 const context: ChatContext = {
@@ -70,23 +69,31 @@ describe("Megumin UI parity audit", () => {
     expect(frontendSource).not.toContain("--accent:${engine.color");
     expect(frontendSource).not.toContain("data-action=\"image-manual\"><span");
     expect(spindleManifest.permissions).toContain("presets");
-    expect(backendSource).toContain("preset:ensureBridge");
-    expect(backendSource).toContain("preset:repairAll");
+    expect(backendSource).toContain("preset:resolve");
+    expect(backendSource).toContain("preset:status");
     expect(backendSource).toContain("force_preset_id");
   });
 });
 
 describe("Megumin preset bridge", () => {
-  test("declares and seeds the native Lumiverse presets", () => {
-    for (const name of ["Megumin Engine.json", "Megumin Image.json", "Megumin Suite V7 DS4.json", "Megumin Suite V7 Gemini.json"]) {
-      expect(presetSeedsSource).toContain(name);
+  test("discovers uploaded Lumiverse presets without seeding or mutating them", () => {
+    for (const name of ["Megumin Engine", "Megumin Image", "Megumin Suite V7 DS4", "Megumin Suite V7 Gemini"]) {
+      expect(backendSource).toContain(name);
     }
 
-    expect(backendSource).toContain("MEGUMIN_PRESET_SEEDS");
-    expect(backendSource).toContain("convertStPromptToBlock");
+    expect(backendSource).not.toContain("MEGUMIN_PRESET_SEEDS");
+    expect(backendSource).not.toContain("convertStPromptToBlock");
+    expect(backendSource).not.toContain("presets.create");
+    expect(backendSource).not.toContain("presets.update");
+    expect(backendSource).not.toContain("presets.delete");
+    expect(backendSource).not.toContain("blocks.create");
+    expect(backendSource).not.toContain("blocks.delete");
     expect(backendSource).toContain("suiteDs4PresetId");
     expect(backendSource).toContain("suiteGeminiPresetId");
     expect(spindleManifest.permissions).toContain("presets");
+    expect(backendSource).toContain("___PS_STORY_PLAN___");
+    expect(backendSource).toContain("___PS_IMAGE_GEN___");
+    expect(backendSource).toContain("___PS_MEMORY_SUMMARIZE___");
   });
 });
 
@@ -116,7 +123,7 @@ describe("Megumin ST function coverage audit", () => {
       "npc:scan",
       "image:manual",
       "engine:save",
-      "preset:repairAll"
+      "preset:status"
     ];
     for (const marker of backendMappings) expect(backendSource).toContain(marker);
   });
@@ -125,15 +132,17 @@ describe("Megumin ST function coverage audit", () => {
 describe("Megumin prompt assembly", () => {
   test("coerces numeric UI values before prompt assembly", () => {
     const profile = mergeProfile({ userWordCount: 400, userLanguage: "French", customThinkEffort: 250 });
-    const result = buildPromptMessages([], [], profile, [], context);
+    const result = buildPromptMessages([{ role: "system", content: "[[count]]\n[[Language]]" }], [], profile, [], context);
     const joined = result.messages.map((message) => typeof message.content === "string" ? message.content : "").join("\n");
 
     expect(profile.userWordCount).toBe("400");
     expect(profile.customThinkEffort).toBe("250");
     expect(joined).toContain("maximum 400 words");
+    expect(joined).toContain("FRENCH");
+    expect(joined).not.toContain("[[count]]");
   });
 
-  test("injects Megumin blocks and prunes archived prompt turns", () => {
+  test("replaces uploaded preset placeholders and prunes archived prompt turns", () => {
     const profile = clone(DEFAULT_PROFILE);
     profile.memoryCore.enabled = true;
     profile.memoryCore.shortTermChunks = [
@@ -160,7 +169,10 @@ describe("Megumin prompt assembly", () => {
       { id: "1", role: "assistant", content: "The keeper revealed that the ruby key unlocks the archive shrine beneath the guild hall." },
       { id: "2", role: "user", content: "We should use the ruby key now." }
     ];
-    const incoming: LlmMessage[] = chatMessages.map((message) => ({ role: message.role, content: message.content }));
+    const incoming: LlmMessage[] = [
+      { role: "system", content: "[[prompt1]]\n[[long-Memory]]\n[[Short-memory]]\n[[npc_dossier2]]" },
+      ...chatMessages.map((message) => ({ role: message.role, content: message.content }))
+    ];
 
     const result = buildPromptMessages(incoming, chatMessages, profile, [], context);
     const joined = result.messages.map((message) => typeof message.content === "string" ? message.content : "").join("\n");
@@ -169,8 +181,9 @@ describe("Megumin prompt assembly", () => {
     expect(joined).toContain("<system_config>");
     expect(joined).toContain("LONG-TERM MEMORY VAULT");
     expect(joined).toContain("ruby key unlocks the archive shrine");
+    expect(joined).not.toContain("[[long-Memory]]");
     expect(result.messages.some((message) => message.content === chatMessages[0].content)).toBe(false);
-    expect(result.breakdown.some((entry) => entry.name?.includes("Megumin"))).toBe(true);
+    expect(result.breakdown.some((entry) => entry.name?.includes("Placeholder Injection"))).toBe(true);
   });
 });
 

@@ -113,7 +113,7 @@ type AppState = {
   customEngines: EngineMode[];
   imageConnections: any[];
   uiAssets: { heroImages: string[]; groupImage?: string; mascotImage?: string };
-  presetBridge: { available: boolean; enginePresetId?: string; imagePresetId?: string; suiteDs4PresetId?: string; suiteGeminiPresetId?: string };
+  presetBridge: { available: boolean; enginePresetId?: string; imagePresetId?: string; suiteDs4PresetId?: string; suiteGeminiPresetId?: string; missing?: string[] };
   status: string;
 };
 
@@ -604,9 +604,9 @@ async function handleAction(el: HTMLElement) {
       return;
     }
     if (action === "preset-ensure") {
-      const data = await request<any>("preset:ensureBridge", { kind: el.dataset.kind || "engine" });
+      const data = await request<any>("preset:resolve", { kind: el.dataset.kind || "engine" });
       state.presetBridge = data.presetBridge || state.presetBridge;
-      state.status = "Preset ready";
+      state.status = data.preset?.name ? `${data.preset.name} found` : "Preset missing";
       render();
       return;
     }
