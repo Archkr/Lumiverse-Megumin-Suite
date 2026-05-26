@@ -676,7 +676,7 @@ function setup(ctx) {
     chromeless: true
   });
   floatWidget.root.className = "meg-float";
-  floatWidget.root.innerHTML = `<button class="meg-float-btn" title="Megumin Suite" type="button" aria-label="Megumin Suite">${icon("wand")}</button>`;
+  floatWidget.root.innerHTML = `<button class="meg-float-btn" title="Megumin Suite" type="button" aria-label="Megumin Suite">${icon("fa-wand-magic-sparkles")}</button>`;
   floatWidget.root.querySelector("button")?.addEventListener("click", () => openApp());
   const unsubscribeBackend = ctxRef.onBackendMessage((payload) => {
     const response = payload;
@@ -1520,7 +1520,7 @@ function renderStyle() {
       ${isOff ? `<span class="card-status active-status">${icon("fa-check")} Active</span>` : ""}
     </button>` : `<div class="wstyle-off-card locked-card"><span class="off-left"><span class="off-icon blue">${icon("fa-lock")}</span><span><strong>No Style (Off) - Locked</strong><small>V7 Engines require a narrative style directive. Defaulting to V7 Recommended.</small></span></span></div>`}
     ${presetFeatureWarning(["writing-style"])}
-    <div class="wstyle-dnr-panel">
+    <div class="wstyle-dnr-panel" id="dnr_panel">
       <div class="wstyle-dnr-header" id="dnr_header_toggle">
         <div class="dnr-info">
           <div class="dnr-icon">${icon("fa-scale-balanced")}</div>
@@ -2502,9 +2502,6 @@ function iconExportName(name) {
   return `fa${clean.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join("")}`;
 }
 function fontAwesomeIcon(name) {
-  if (name === "wand") {
-    return `<i class="fa-solid fa-wand-magic-sparkles meg-fa meg-wand-wrap" aria-hidden="true"><svg class="meg-svg meg-wand" viewBox="0 0 24 24" focusable="false"><path d="m15 4 5 5-11 11-5-5 11-11Z"></path><path d="m14 5 5 5"></path><path d="M5 4v3M3.5 5.5h3M20 16v3M18.5 17.5h3M8 2l.7 1.7L10.5 4l-1.8.7L8 6.5l-.7-1.8L5.5 4l1.8-.7L8 2Z"></path></svg></i>`;
-  }
   const def = faLibrary[iconExportName(name)] || faLibrary.faCircleInfo;
   if (!def?.icon)
     return null;
@@ -2641,9 +2638,6 @@ function styles() {
 .meg-float-btn:hover { transform:translateY(-2px); background:#27272a; border-color:rgba(255,255,255,.22); }
 .meg-float-btn .meg-fa { width:30px; height:30px; color:#ffffff; filter:drop-shadow(0 2px 6px rgba(0,0,0,.45)); }
 .meg-float-btn .meg-svg { width:30px; height:30px; }
-.meg-float-btn .meg-wand path:first-child { fill:#ffffff; stroke:#ffffff; }
-.meg-float-btn .meg-wand path:nth-child(2) { stroke:#38bdf8; stroke-width:2.6; }
-.meg-float-btn .meg-wand path:last-child { fill:#fbbf24; stroke:#fbbf24; }
 .meg-fa { width:16px; height:16px; flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; line-height:1; }
 .meg-svg { width:16px; height:16px; flex:0 0 auto; fill:currentColor; stroke:none; }
 .meg-overlay { --bg-panel:#18181b; --bg-main:#0e0e11; --border-color:#27272a; --text-main:#f4f4f5; --text-muted:#a1a1aa; --accent-color:#ffffff; --gold:#f59e0b; position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.72); backdrop-filter:blur(5px); font-family:Inter, ui-sans-serif, system-ui, sans-serif; color:#f4f4f5; }
@@ -2845,6 +2839,7 @@ pre { white-space:pre-wrap; color:#d4d4d8; margin:0; padding:12px; border-top:1p
 .ps-toggle-card.active .ps-switch { background:var(--accent-color); }
 .ps-toggle-card.active .ps-switch::after { left:22px; background:#000; }
 .wstyle-dnr-panel { background:var(--bg-main); border:1px solid var(--border-color); border-radius:14px; overflow:hidden; margin-bottom:8px; padding:0; }
+#dnr_panel { display:block !important; visibility:visible !important; }
 .wstyle-dnr-header { display:flex; justify-content:space-between; align-items:center; padding:16px 20px; cursor:pointer; transition:background .2s; }
 .wstyle-dnr-header:hover { background:rgba(255,255,255,.02); }
 .wstyle-dnr-header .dnr-info { display:flex; align-items:center; gap:12px; }
