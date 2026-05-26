@@ -782,6 +782,12 @@ function closeApp() {
 function root() {
   return appMount.root;
 }
+function hostElement(tag, className) {
+  const element = ctxRef?.dom?.createElement?.(tag) || document.createElement(tag);
+  if (className)
+    element.className = className;
+  return element;
+}
 function render() {
   if (!appMount || !state.visible)
     return;
@@ -851,6 +857,7 @@ function heroName() {
   return state.context?.chatName || "Global Default";
 }
 function wire(container) {
+  mountDnrPanel(container);
   container.querySelectorAll("[data-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       state.devMode = false;
@@ -955,6 +962,69 @@ function wire(container) {
     };
     reader.readAsText(file);
   });
+}
+function mountDnrPanel(container) {
+  const mount = container.querySelector("#dnr_mount");
+  if (!mount || mount.querySelector("#dnr_panel"))
+    return;
+  const dVal = clamp(Number(state.profile.dnRatio?.dialogue ?? 50), 0, 100);
+  const nVal = 100 - dVal;
+  const isDnr = !!state.profile.dnRatio?.enabled;
+  const panel = hostElement("div", "wstyle-dnr-panel");
+  panel.id = "dnr_panel";
+  const header = hostElement("div", "wstyle-dnr-header");
+  header.id = "dnr_header_toggle";
+  const info = hostElement("div", "dnr-info");
+  const dnrIcon = hostElement("div", "dnr-icon");
+  dnrIcon.innerHTML = icon("fa-scale-balanced");
+  const textWrap = hostElement("div");
+  const title = hostElement("div", "dnr-title");
+  title.textContent = "Dialogue / Narration Ratio";
+  const subtitle = hostElement("div", "dnr-subtitle");
+  subtitle.textContent = "Fine‑tune the balance between spoken dialogue and descriptive prose.";
+  textWrap.append(title, subtitle);
+  info.append(dnrIcon, textWrap);
+  const toggle = hostElement("div", `ps-toggle-card ${isDnr ? "active" : ""}`);
+  toggle.id = "dnr_toggle";
+  toggle.dataset.action = "toggle";
+  toggle.dataset.path = "dnRatio.enabled";
+  const switchEl = hostElement("div", "ps-switch");
+  toggle.append(switchEl);
+  header.append(info, toggle);
+  const body = hostElement("div", `wstyle-dnr-body ${isDnr ? "open" : ""}`);
+  body.id = "dnr_body";
+  const track = hostElement("div", "wstyle-dnr-slider-track");
+  const narrLabel = hostElement("span", "wstyle-dnr-label narr");
+  const narrValue = hostElement("span");
+  narrValue.id = "lbl_narr";
+  narrValue.textContent = String(nVal);
+  narrLabel.append(narrValue, "% Narration");
+  const slider = hostElement("input");
+  slider.type = "range";
+  slider.id = "dnr_slider";
+  slider.min = "0";
+  slider.max = "100";
+  slider.step = "10";
+  slider.value = String(dVal);
+  slider.dataset.bind = "dnRatio.dialogue";
+  const dialLabel = hostElement("span", "wstyle-dnr-label dial");
+  const dialValue = hostElement("span");
+  dialValue.id = "lbl_dial";
+  dialValue.textContent = String(dVal);
+  dialLabel.append(dialValue, "% Dialogue");
+  track.append(narrLabel, slider, dialLabel);
+  const preview = hostElement("div", "dnr-preview");
+  preview.id = "dnr_preview";
+  const prevD = hostElement("span");
+  prevD.id = "lbl_prev_d";
+  prevD.textContent = String(dVal);
+  const prevN = hostElement("span");
+  prevN.id = "lbl_prev_n";
+  prevN.textContent = String(nVal);
+  preview.append('Preview → "Maintain a balance of ', prevD, "% Dialogue and ", prevN, '% Narration."');
+  body.append(track, preview);
+  panel.append(header, body);
+  mount.replaceChildren(panel);
 }
 function readInputValue(input) {
   if (input instanceof HTMLInputElement && input.type === "checkbox")
@@ -1520,7 +1590,8 @@ function renderStyle() {
       ${isOff ? `<span class="card-status active-status">${icon("fa-check")} Active</span>` : ""}
     </button>` : `<div class="wstyle-off-card locked-card"><span class="off-left"><span class="off-icon blue">${icon("fa-lock")}</span><span><strong>No Style (Off) - Locked</strong><small>V7 Engines require a narrative style directive. Defaulting to V7 Recommended.</small></span></span></div>`}
     ${presetFeatureWarning(["writing-style"])}
-    <div class="wstyle-dnr-panel" id="dnr_panel">
+    <div id="dnr_mount" class="dnr-mount"></div>
+    <template class="dnr-template-disabled">
       <div class="wstyle-dnr-header" id="dnr_header_toggle">
         <div class="dnr-info">
           <div class="dnr-icon">${icon("fa-scale-balanced")}</div>
@@ -1539,7 +1610,7 @@ function renderStyle() {
           Preview → "Maintain a balance of <span id="lbl_prev_d">${state.profile.dnRatio.dialogue}</span>% Dialogue and <span id="lbl_prev_n">${100 - state.profile.dnRatio.dialogue}</span>% Narration."
         </div>
       </div>
-    </div>
+    </template>
     ${presetFeatureWarning(["dialogue-narration"])}
     <div class="wstyle-filters">
       ${stylePill("all", "All", directStyles.length + customStyles.length + genTemplates.length)}
@@ -2840,10 +2911,14 @@ pre { white-space:pre-wrap; color:#d4d4d8; margin:0; padding:12px; border-top:1p
 .ps-toggle-card.active .ps-switch::after { left:22px; background:#000; }
 .wstyle-dnr-panel { background:var(--bg-main); border:1px solid var(--border-color); border-radius:14px; overflow:hidden; margin-bottom:8px; padding:0; }
 #dnr_panel { display:block !important; visibility:visible !important; }
+.dnr-mount { display:block; }
 .wstyle-dnr-header { display:flex; justify-content:space-between; align-items:center; padding:16px 20px; cursor:pointer; transition:background .2s; }
 .wstyle-dnr-header:hover { background:rgba(255,255,255,.02); }
 .wstyle-dnr-header .dnr-info { display:flex; align-items:center; gap:12px; }
 .wstyle-dnr-header .dnr-icon { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(245,158,11,.05)); display:flex; align-items:center; justify-content:center; color:var(--gold); font-size:.95rem; }
+.wstyle-dnr-header .dnr-title { font-weight:700; font-size:.9rem; color:var(--text-main); }
+.wstyle-dnr-header .dnr-subtitle { font-size:.73rem; color:var(--text-muted); }
+.wstyle-dnr-panel #dnr_toggle { padding:8px; min-width:56px; justify-content:center; cursor:pointer; }
 .wstyle-dnr-body { padding:0 20px 20px; display:none; }
 .wstyle-dnr-body.open { display:block; }
 .wstyle-dnr-slider-track { display:flex; align-items:center; gap:14px; background:rgba(0,0,0,.25); padding:14px 16px; border-radius:10px; border:1px solid var(--border-color); }
@@ -2851,6 +2926,7 @@ pre { white-space:pre-wrap; color:#d4d4d8; margin:0; padding:12px; border-top:1p
 .wstyle-dnr-label { font-size:.78rem; font-weight:700; white-space:nowrap; min-width:100px; }
 .wstyle-dnr-label.narr { color:#a855f7; text-align:right; }
 .wstyle-dnr-label.dial { color:#10b981; }
+.dnr-preview { font-size:.7rem; color:var(--text-muted); text-align:center; margin-top:10px; font-family:monospace; opacity:.7; }
 .preset-warning { margin:0 0 14px; }
 .wstyle-gen-card, .wstyle-create-card { display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid var(--border-color); border-radius:14px; background:var(--bg-main); padding:16px 18px; color:var(--text-main); cursor:pointer; text-align:left; }
 .wstyle-create-card { justify-content:center; border-style:dashed; color:#10b981; font-weight:800; }
