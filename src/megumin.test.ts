@@ -61,7 +61,18 @@ describe("Megumin UI parity audit", () => {
       "data-action=\"ban-import\"",
       "data-action=\"npc-upload\"",
       "showPromptPreview",
-      "presetFeatureWarning"
+      "presetFeatureWarning",
+      "bindFloatWidgetButton",
+      "pointerdown",
+      "suppressClick",
+      "flushProfileSave",
+      "scope: state.context?.scope",
+      "event.target !== event.currentTarget",
+      "CHAT_SWITCHED",
+      "CHAT_CHANGED",
+      "CHARACTER_AVATAR_CHANGED",
+      "characterAvatarUrl",
+      "heroName"
     ];
     for (const label of requiredLabels) expect(frontendSource).toContain(label);
 
@@ -78,6 +89,7 @@ describe("Megumin UI parity audit", () => {
     expect(frontendSource).not.toContain("<p>${escapeHtml(current.sub)}</p>");
     expect(frontendSource).not.toContain("--accent:${engine.color");
     expect(frontendSource).not.toContain("data-action=\"image-manual\"><span");
+    expect(frontendSource).not.toContain("floatWidget.root.querySelector(\"button\")?.addEventListener(\"click\", () => openApp())");
     expect(spindleManifest.permissions).toContain("presets");
     expect(backendSource).toContain("preset:resolve");
     expect(backendSource).toContain("preset:status");
@@ -88,6 +100,9 @@ describe("Megumin UI parity audit", () => {
     expect(backendSource).toContain("npc:uploadPortrait");
     expect(backendSource).toContain("spindle.images.uploadFromDataUrl");
     expect(backendSource).toContain("force_preset_id");
+    expect(backendSource).toContain("spindle.userStorage");
+    expect(backendSource).toContain("spindle.storage.read(path)");
+    expect(backendSource).toContain("safeProfileScope");
   });
 });
 

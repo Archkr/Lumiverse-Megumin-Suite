@@ -3581,25 +3581,34 @@ var UTILITY_TRIGGERS = {
   npcPortrait: "___PS_NPC_PFP___",
   dummyOrder: "___PS_DUMMY___"
 };
-async function readJson(path, fallback) {
+async function readJson(path, fallback, userId) {
   try {
-    const raw = await spindle.storage.read(path);
+    const raw = await spindle.userStorage.read(path, userId);
     return JSON.parse(raw);
   } catch {
-    return clone(fallback);
+    try {
+      const raw = await spindle.storage.read(path);
+      const parsed = JSON.parse(raw);
+      await writeJson(path, parsed, userId).catch(() => {
+        return;
+      });
+      return parsed;
+    } catch {
+      return clone(fallback);
+    }
   }
 }
-async function writeJson(path, value) {
-  await spindle.storage.write(path, JSON.stringify(value, null, 2));
+async function writeJson(path, value, userId) {
+  await spindle.userStorage.setJson(path, value, { indent: 2, userId });
 }
 function profilePath(scope) {
   return `profiles/${scope}.json`;
 }
-async function getCustomEngines() {
-  return readJson(CUSTOM_ENGINES_PATH, []);
+async function getCustomEngines(userId) {
+  return readJson(CUSTOM_ENGINES_PATH, [], userId);
 }
-async function saveCustomEngines(engines) {
-  await writeJson(CUSTOM_ENGINES_PATH, engines);
+async function saveCustomEngines(engines, userId) {
+  await writeJson(CUSTOM_ENGINES_PATH, engines, userId);
 }
 async function hasPresetAccess() {
   try {
@@ -3615,7 +3624,7 @@ async function findMeguminPreset(kind, userId) {
   if (!await hasPresetAccess())
     return null;
   const target = MEGUMIN_PRESET_TARGETS[kind];
-  const state = await readJson(PRESET_BRIDGE_PATH, {});
+  const state = await readJson(PRESET_BRIDGE_PATH, {}, userId);
   const knownId = state[target.stateKey];
   if (knownId) {
     try {
@@ -3629,7 +3638,7 @@ async function findMeguminPreset(kind, userId) {
   if (preset?.id && state[target.stateKey] !== preset.id) {
     state[target.stateKey] = preset.id;
     state.updatedAt = Date.now();
-    await writeJson(PRESET_BRIDGE_PATH, state);
+    await writeJson(PRESET_BRIDGE_PATH, state, userId);
   }
   return preset;
 }
@@ -3737,14 +3746,14 @@ async function presetContractAudit(profile, customEngines, chatMessages, context
     updatedAt: Date.now()
   };
 }
-async function loadProfile(scope) {
-  const globalProfile = await readJson(profilePath("global"), DEFAULT_PROFILE);
-  const raw = scope === "global" ? globalProfile : await readJson(profilePath(scope), globalProfile);
+async function loadProfile(scope, userId) {
+  const globalProfile = await readJson(profilePath("global"), DEFAULT_PROFILE, userId);
+  const raw = scope === "global" ? globalProfile : await readJson(profilePath(scope), globalProfile, userId);
   return mergeProfile(raw);
 }
-async function saveProfile(scope, profile) {
+async function saveProfile(scope, profile, userId) {
   const merged = mergeProfile(profile);
-  await writeJson(profilePath(scope), merged);
+  await writeJson(profilePath(scope), merged, userId);
   return merged;
 }
 function mimeForPath(path) {
@@ -3788,17 +3797,28 @@ async function loadUiAssets(context) {
   const mascotImage = await readAssetDataUrl("img/Cat.png");
   return { heroImages, groupImage: groupImage || undefined, mascotImage: mascotImage || undefined };
 }
-async function syncProfileKeysFrom(scope, keys) {
+async function listProfileFiles(userId) {
+  const files = new Set;
+  try {
+    for (const file of await spindle.userStorage.list("profiles/", userId))
+      files.add(String(file));
+  } catch {}
+  try {
+    for (const file of await spindle.storage.list("profiles/"))
+      files.add(String(file));
+  } catch {}
+  return [...files];
+}
+function safeProfileScope(value, fallback) {
+  const scope = String(value || "").trim();
+  return /^[A-Za-z0-9_-]+$/.test(scope) ? scope : fallback;
+}
+async function syncProfileKeysFrom(scope, keys, userId) {
   const safeKeys = keys.filter((key) => SYNCABLE_PROFILE_KEYS.has(key));
   if (safeKeys.length === 0)
     return 0;
-  const source = await loadProfile(scope);
-  let profileFiles = [];
-  try {
-    profileFiles = await spindle.storage.list("profiles/");
-  } catch {
-    profileFiles = [];
-  }
+  const source = await loadProfile(scope, userId);
+  const profileFiles = await listProfileFiles(userId);
   const targets = new Set(["profiles/global.json", profilePath(scope)]);
   for (const file of profileFiles) {
     const path = String(file);
@@ -3807,11 +3827,11 @@ async function syncProfileKeysFrom(scope, keys) {
     targets.add(path.startsWith("profiles/") ? path : `profiles/${path}`);
   }
   for (const path of targets) {
-    const current = mergeProfile(await readJson(path, DEFAULT_PROFILE));
+    const current = mergeProfile(await readJson(path, DEFAULT_PROFILE, userId));
     for (const key of safeKeys) {
       current[key] = clone(source[key]);
     }
-    await writeJson(path, current);
+    await writeJson(path, current, userId);
   }
   return targets.size;
 }
@@ -3922,8 +3942,8 @@ function lastAssistant(messages) {
   }
   return null;
 }
-async function processMemory(scope, chatId) {
-  const profile = await loadProfile(scope);
+async function processMemory(scope, chatId, userId) {
+  const profile = await loadProfile(scope, userId);
   const mem = profile.memoryCore;
   const messages = await getMessages(chatId);
   const real = messages.map((msg, index) => ({ msg, index })).filter((item) => item.msg.role !== "system" && cleanChatText(item.msg.content).length > 0);
@@ -3960,7 +3980,7 @@ async function processMemory(scope, chatId) {
 <chat>
 ${text}
 </chat>` }
-    ], { backend: mem.backend, presetKind: "engine", trigger: "memorySummary" });
+    ], { backend: mem.backend, presetKind: "engine", userId, trigger: "memorySummary" });
     mem.shortTermChunks.push({ id, startIndex, endIndex, summary, timestamp: Date.now() });
     archivedIds.add(id);
   }
@@ -3975,10 +3995,10 @@ ${text}
       mem.longTermVault.push({ ...chunk, text: rawText, summary: undefined, timestamp: Date.now() });
     }
   }
-  return saveProfile(scope, profile);
+  return saveProfile(scope, profile, userId);
 }
-async function scanNpcBlocks(scope, chatId) {
-  const profile = await loadProfile(scope);
+async function scanNpcBlocks(scope, chatId, userId) {
+  const profile = await loadProfile(scope, userId);
   if (!profile.npcBank.enabled)
     return profile;
   const messages = await getMessages(chatId);
@@ -3997,7 +4017,7 @@ async function scanNpcBlocks(scope, chatId) {
     existing.add(npc.name.trim().toLowerCase());
     changed = true;
   }
-  return changed ? saveProfile(scope, profile) : profile;
+  return changed ? saveProfile(scope, profile, userId) : profile;
 }
 function parseImageTag(content) {
   const match = content.match(/<img\s+prompt=["']([\s\S]*?)["']\s*\/?>/i);
@@ -4005,20 +4025,20 @@ function parseImageTag(content) {
     return null;
   return { prompt: match[1].trim(), cleaned: content.replace(match[0], "").trim() };
 }
-async function resolveImageConnection(profile) {
+async function resolveImageConnection(profile, userId) {
   try {
     if (profile.imageGen.connectionId) {
-      return await spindle.imageGen.getConnection(profile.imageGen.connectionId);
+      return await spindle.imageGen.getConnection(profile.imageGen.connectionId, userId);
     }
-    const connections = await spindle.imageGen.listConnections();
+    const connections = await spindle.imageGen.listConnections(userId);
     return connections.find((connection) => connection.is_default) || connections[0] || null;
   } catch {
     return null;
   }
 }
-async function generateImageForChat(scope, chatId, prompt, attachToMessageId) {
-  const profile = await loadProfile(scope);
-  const connection = await resolveImageConnection(profile);
+async function generateImageForChat(scope, chatId, prompt, attachToMessageId, userId) {
+  const profile = await loadProfile(scope, userId);
+  const connection = await resolveImageConnection(profile, userId);
   const parameters = {
     width: profile.imageGen.imgWidth,
     height: profile.imageGen.imgHeight,
@@ -4099,15 +4119,15 @@ async function generateWritingStyleInsights(input, userId) {
 Notes: ${notes || "No notes yet. Suggest grounded cinematic prose options."}` }
   ], { backend: "preset", presetKind: "engine", userId, trigger: "dummyOrder" });
 }
-async function handlePostGeneration(chatId) {
-  const context = await getChatContext(chatId);
-  const profile = await loadProfile(context.scope);
+async function handlePostGeneration(chatId, userId) {
+  const context = await getChatContext(chatId, userId);
+  const profile = await loadProfile(context.scope, userId);
   const messages = await getMessages(chatId);
-  await scanNpcBlocks(context.scope, chatId);
+  await scanNpcBlocks(context.scope, chatId, userId);
   if (profile.memoryCore.enabled && profile.memoryCore.triggerMode === "frequency") {
     const aiCount = messages.filter((message) => message.role === "assistant").length;
     if (aiCount > 0 && aiCount % Math.max(1, profile.memoryCore.autoFreq || 10) === 0) {
-      processMemory(context.scope, chatId).catch((err) => spindle.log.warn(`Memory scan failed: ${String(err)}`));
+      processMemory(context.scope, chatId, userId).catch((err) => spindle.log.warn(`Memory scan failed: ${String(err)}`));
     }
   }
   const assistant = lastAssistant(messages);
@@ -4117,14 +4137,14 @@ async function handlePostGeneration(chatId) {
   if (!imageTag)
     return;
   await spindle.chat.updateMessage(chatId, assistant.id, { content: imageTag.cleaned, skipChunkRebuild: true });
-  await generateImageForChat(context.scope, chatId, imageTag.prompt, assistant.id);
+  await generateImageForChat(context.scope, chatId, imageTag.prompt, assistant.id, userId);
 }
 async function rpc(payload, userId) {
   const context = await getActiveContext(userId);
   switch (payload.type) {
     case "bootstrap": {
-      const profile = await loadProfile(context.scope);
-      const customEngines = await getCustomEngines();
+      const profile = await loadProfile(context.scope, userId);
+      const customEngines = await getCustomEngines(userId);
       const chatMessages = await getMessages(context.chatId);
       let imageConnections = [];
       try {
@@ -4146,39 +4166,40 @@ async function rpc(payload, userId) {
     }
     case "profile:save": {
       const profile = mergeProfile(payload.payload?.profile);
-      return { profile: await saveProfile(context.scope, profile), context };
+      const scope = safeProfileScope(payload.payload?.scope, context.scope);
+      return { profile: await saveProfile(scope, profile, userId), context };
     }
     case "profile:syncTab": {
       const keys = Array.isArray(payload.payload?.keys) ? payload.payload.keys.map(String) : [];
-      const syncedTargets = await syncProfileKeysFrom(context.scope, keys);
-      return { profile: await loadProfile(context.scope), context, syncedTargets };
+      const syncedTargets = await syncProfileKeysFrom(context.scope, keys, userId);
+      return { profile: await loadProfile(context.scope, userId), context, syncedTargets };
     }
     case "profile:reset":
-      await saveProfile(context.scope, DEFAULT_PROFILE);
-      return { profile: await loadProfile(context.scope), context };
+      await saveProfile(context.scope, DEFAULT_PROFILE, userId);
+      return { profile: await loadProfile(context.scope, userId), context };
     case "engine:save": {
       const engine = payload.payload?.engine;
       if (!engine?.id)
         throw new Error("Engine id is required");
-      const engines = await getCustomEngines();
+      const engines = await getCustomEngines(userId);
       const index = engines.findIndex((item) => item.id === engine.id);
       if (index >= 0)
         engines[index] = engine;
       else
         engines.push(engine);
-      await saveCustomEngines(engines);
+      await saveCustomEngines(engines, userId);
       return { customEngines: engines, engines: allEngines(engines) };
     }
     case "engine:delete": {
       const id = String(payload.payload?.id || "");
-      const engines = (await getCustomEngines()).filter((engine) => engine.id !== id);
-      await saveCustomEngines(engines);
+      const engines = (await getCustomEngines(userId)).filter((engine) => engine.id !== id);
+      await saveCustomEngines(engines, userId);
       return { customEngines: engines, engines: allEngines(engines) };
     }
     case "story:generate": {
       if (!context.chatId)
         throw new Error("Open a chat before generating a story plan");
-      const profile = await loadProfile(context.scope);
+      const profile = await loadProfile(context.scope, userId);
       const messages = await getMessages(context.chatId);
       const plan = await generateQuiet([
         { role: "system", content: "You are an expert story architect. Brainstorm medium-to-long-term plot developments. Do not write actions, thoughts, or dialogue for the user character." },
@@ -4188,12 +4209,12 @@ ${cleanedTranscript(messages, 60)}` }
       ], { backend: profile.storyPlan.backend, presetKind: "engine", userId, trigger: "storyPlan" });
       profile.storyPlan.currentPlan = plan;
       profile.storyPlan.enabled = true;
-      return { profile: await saveProfile(context.scope, profile), plan };
+      return { profile: await saveProfile(context.scope, profile, userId), plan };
     }
     case "banlist:analyze": {
       if (!context.chatId)
         throw new Error("Open a chat before analyzing style");
-      const profile = await loadProfile(context.scope);
+      const profile = await loadProfile(context.scope, userId);
       const messages = await getMessages(context.chatId);
       const analysis = await generateQuiet([
         { role: "system", content: "Identify the 5 most repetitive cliche or overused stylistic patterns. Return only short generalized rules separated by commas." },
@@ -4203,23 +4224,23 @@ ${cleanedTranscript(messages, 60)}` }
       for (const phrase of phrases)
         if (!profile.banList.includes(phrase))
           profile.banList.push(phrase);
-      return { profile: await saveProfile(context.scope, profile), added: phrases };
+      return { profile: await saveProfile(context.scope, profile, userId), added: phrases };
     }
     case "memory:process": {
       if (!context.chatId)
         throw new Error("Open a chat before processing memory");
-      return { profile: await processMemory(context.scope, context.chatId) };
+      return { profile: await processMemory(context.scope, context.chatId, userId) };
     }
     case "npc:scan": {
       if (!context.chatId)
         throw new Error("Open a chat before scanning NPCs");
-      return { profile: await scanNpcBlocks(context.scope, context.chatId) };
+      return { profile: await scanNpcBlocks(context.scope, context.chatId, userId) };
     }
     case "npc:portrait": {
       if (!context.chatId)
         throw new Error("Open a chat before generating portraits");
       const name = String(payload.payload?.name || "");
-      const profile = await loadProfile(context.scope);
+      const profile = await loadProfile(context.scope, userId);
       const npc = profile.npcBank.npcs.find((item) => item.name === name);
       if (!npc)
         throw new Error("NPC not found");
@@ -4229,11 +4250,11 @@ ${cleanedTranscript(messages, 60)}` }
 
 ${npcBuildText(npc)}` }
       ], { backend: profile.imageGen.generatorBackend, presetKind: "image", userId, trigger: "npcPortrait" });
-      const image = await generateImageForChat(context.scope, context.chatId, prompt);
+      const image = await generateImageForChat(context.scope, context.chatId, prompt, undefined, userId);
       npc.pfpImageId = image.imageId;
       npc.pfpImageUrl = image.imageUrl;
       npc.pfp = image.imageUrl || "";
-      return { profile: await saveProfile(context.scope, profile), image };
+      return { profile: await saveProfile(context.scope, profile, userId), image };
     }
     case "npc:uploadPortrait": {
       if (!context.chatId)
@@ -4243,7 +4264,7 @@ ${npcBuildText(npc)}` }
       const filename = String(payload.payload?.filename || "npc-portrait.png");
       if (!dataUrl.startsWith("data:image/"))
         throw new Error("Choose an image file for the NPC portrait");
-      const profile = await loadProfile(context.scope);
+      const profile = await loadProfile(context.scope, userId);
       const npc = profile.npcBank.npcs.find((item) => item.name === name);
       if (!npc)
         throw new Error("NPC not found");
@@ -4255,7 +4276,7 @@ ${npcBuildText(npc)}` }
       npc.pfpImageId = uploaded?.id;
       npc.pfpImageUrl = uploaded?.url;
       npc.pfp = uploaded?.url || "";
-      return { profile: await saveProfile(context.scope, profile), image: uploaded };
+      return { profile: await saveProfile(context.scope, profile, userId), image: uploaded };
     }
     case "image:connections": {
       return { imageConnections: await spindle.imageGen.listConnections(userId) };
@@ -4263,18 +4284,18 @@ ${npcBuildText(npc)}` }
     case "image:prompt": {
       if (!context.chatId)
         throw new Error("Open a chat before generating an image prompt");
-      const profile = await loadProfile(context.scope);
+      const profile = await loadProfile(context.scope, userId);
       const messages = await getMessages(context.chatId);
       return { prompt: await generateImagePromptFromChat(profile, messages, userId) };
     }
     case "image:manual": {
       if (!context.chatId)
         throw new Error("Open a chat before generating an image");
-      const profile = await loadProfile(context.scope);
+      const profile = await loadProfile(context.scope, userId);
       const messages = await getMessages(context.chatId);
       const prompt = String(payload.payload?.prompt || "").trim() || await generateImagePromptFromChat(profile, messages, userId);
       const target = lastAssistant(messages);
-      const image = await generateImageForChat(context.scope, context.chatId, prompt, target?.id);
+      const image = await generateImageForChat(context.scope, context.chatId, prompt, target?.id, userId);
       return { image };
     }
     case "style:generate": {
@@ -4296,8 +4317,8 @@ ${npcBuildText(npc)}` }
     case "preset:status":
       return { presetBridge: await presetBridgeStatus(userId) };
     case "preset:audit": {
-      const profile = await loadProfile(context.scope);
-      const customEngines = await getCustomEngines();
+      const profile = await loadProfile(context.scope, userId);
+      const customEngines = await getCustomEngines(userId);
       const chatMessages = await getMessages(context.chatId);
       return { presetAudit: await presetContractAudit(profile, customEngines, chatMessages, context, userId), presetBridge: await presetBridgeStatus(userId) };
     }
@@ -4345,9 +4366,9 @@ spindle.registerInterceptor(async (messages, generationContext) => {
   if (utilityBypassDepth > 0 && generationContext?.generationType === "quiet")
     return messages;
   const chatId = generationContext?.chatId || null;
-  const context = await getChatContext(chatId);
-  const profile = await loadProfile(context.scope);
-  const customEngines = await getCustomEngines();
+  const context = await getChatContext(chatId, generationContext?.userId);
+  const profile = await loadProfile(context.scope, generationContext?.userId);
+  const customEngines = await getCustomEngines(generationContext?.userId);
   const chatMessages = await getMessages(context.chatId);
   const result = buildPromptMessages(messages, chatMessages, profile, customEngines, context);
   if (profile.toggles.promptPreview) {
@@ -4369,7 +4390,7 @@ try {
   spindle.on("GENERATION_ENDED", (payload) => {
     const chatId = payload?.chatId;
     if (chatId)
-      handlePostGeneration(chatId).catch((err) => spindle.log.warn(`Megumin post-generation failed: ${String(err)}`));
+      handlePostGeneration(chatId, payload?.userId).catch((err) => spindle.log.warn(`Megumin post-generation failed: ${String(err)}`));
   });
 } catch {}
 spindle.log.info(`${EXTENSION_NAME} Lumiverse backend loaded`);

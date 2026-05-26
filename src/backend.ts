@@ -72,29 +72,36 @@ const UTILITY_TRIGGERS: Record<UtilityTrigger, string> = {
   dummyOrder: "___PS_DUMMY___"
 };
 
-async function readJson<T>(path: string, fallback: T): Promise<T> {
+async function readJson<T>(path: string, fallback: T, userId?: string): Promise<T> {
   try {
-    const raw = await spindle.storage.read(path);
+    const raw = await spindle.userStorage.read(path, userId);
     return JSON.parse(raw) as T;
   } catch {
-    return clone(fallback);
+    try {
+      const raw = await spindle.storage.read(path);
+      const parsed = JSON.parse(raw) as T;
+      await writeJson(path, parsed, userId).catch(() => undefined);
+      return parsed;
+    } catch {
+      return clone(fallback);
+    }
   }
 }
 
-async function writeJson(path: string, value: unknown): Promise<void> {
-  await spindle.storage.write(path, JSON.stringify(value, null, 2));
+async function writeJson(path: string, value: unknown, userId?: string): Promise<void> {
+  await spindle.userStorage.setJson(path, value, { indent: 2, userId });
 }
 
 function profilePath(scope: string): string {
   return `profiles/${scope}.json`;
 }
 
-async function getCustomEngines(): Promise<EngineMode[]> {
-  return readJson<EngineMode[]>(CUSTOM_ENGINES_PATH, []);
+async function getCustomEngines(userId?: string): Promise<EngineMode[]> {
+  return readJson<EngineMode[]>(CUSTOM_ENGINES_PATH, [], userId);
 }
 
-async function saveCustomEngines(engines: EngineMode[]): Promise<void> {
-  await writeJson(CUSTOM_ENGINES_PATH, engines);
+async function saveCustomEngines(engines: EngineMode[], userId?: string): Promise<void> {
+  await writeJson(CUSTOM_ENGINES_PATH, engines, userId);
 }
 
 async function hasPresetAccess(): Promise<boolean> {
@@ -112,7 +119,7 @@ function matchesTargetPreset(preset: any, kind: MeguminPresetKey): boolean {
 async function findMeguminPreset(kind: MeguminPresetKey, userId?: string): Promise<any | null> {
   if (!await hasPresetAccess()) return null;
   const target = MEGUMIN_PRESET_TARGETS[kind];
-  const state = await readJson<PresetBridgeState>(PRESET_BRIDGE_PATH, {});
+  const state = await readJson<PresetBridgeState>(PRESET_BRIDGE_PATH, {}, userId);
   const knownId = state[target.stateKey];
   if (knownId) {
     try {
@@ -128,7 +135,7 @@ async function findMeguminPreset(kind: MeguminPresetKey, userId?: string): Promi
   if (preset?.id && state[target.stateKey] !== preset.id) {
     state[target.stateKey] = preset.id;
     state.updatedAt = Date.now();
-    await writeJson(PRESET_BRIDGE_PATH, state);
+    await writeJson(PRESET_BRIDGE_PATH, state, userId);
   }
   return preset;
 }
@@ -267,15 +274,15 @@ async function presetContractAudit(
   };
 }
 
-async function loadProfile(scope: string): Promise<MeguminProfile> {
-  const globalProfile = await readJson(profilePath("global"), DEFAULT_PROFILE);
-  const raw = scope === "global" ? globalProfile : await readJson(profilePath(scope), globalProfile);
+async function loadProfile(scope: string, userId?: string): Promise<MeguminProfile> {
+  const globalProfile = await readJson(profilePath("global"), DEFAULT_PROFILE, userId);
+  const raw = scope === "global" ? globalProfile : await readJson(profilePath(scope), globalProfile, userId);
   return mergeProfile(raw);
 }
 
-async function saveProfile(scope: string, profile: MeguminProfile): Promise<MeguminProfile> {
+async function saveProfile(scope: string, profile: MeguminProfile, userId?: string): Promise<MeguminProfile> {
   const merged = mergeProfile(profile);
-  await writeJson(profilePath(scope), merged);
+  await writeJson(profilePath(scope), merged, userId);
   return merged;
 }
 
@@ -317,16 +324,31 @@ async function loadUiAssets(context: ChatContext): Promise<{ heroImages: string[
   return { heroImages, groupImage: groupImage || undefined, mascotImage: mascotImage || undefined };
 }
 
-async function syncProfileKeysFrom(scope: string, keys: string[]): Promise<number> {
+async function listProfileFiles(userId?: string): Promise<string[]> {
+  const files = new Set<string>();
+  try {
+    for (const file of await spindle.userStorage.list("profiles/", userId)) files.add(String(file));
+  } catch {
+    // User storage may be empty on first migration.
+  }
+  try {
+    for (const file of await spindle.storage.list("profiles/")) files.add(String(file));
+  } catch {
+    // Legacy storage may not have profile files.
+  }
+  return [...files];
+}
+
+function safeProfileScope(value: unknown, fallback: string): string {
+  const scope = String(value || "").trim();
+  return /^[A-Za-z0-9_-]+$/.test(scope) ? scope : fallback;
+}
+
+async function syncProfileKeysFrom(scope: string, keys: string[], userId?: string): Promise<number> {
   const safeKeys = keys.filter((key) => SYNCABLE_PROFILE_KEYS.has(key));
   if (safeKeys.length === 0) return 0;
-  const source = await loadProfile(scope);
-  let profileFiles: string[] = [];
-  try {
-    profileFiles = await spindle.storage.list("profiles/");
-  } catch {
-    profileFiles = [];
-  }
+  const source = await loadProfile(scope, userId);
+  const profileFiles = await listProfileFiles(userId);
   const targets = new Set<string>(["profiles/global.json", profilePath(scope)]);
   for (const file of profileFiles) {
     const path = String(file);
@@ -334,11 +356,11 @@ async function syncProfileKeysFrom(scope: string, keys: string[]): Promise<numbe
     targets.add(path.startsWith("profiles/") ? path : `profiles/${path}`);
   }
   for (const path of targets) {
-    const current = mergeProfile(await readJson(path, DEFAULT_PROFILE));
+    const current = mergeProfile(await readJson(path, DEFAULT_PROFILE, userId));
     for (const key of safeKeys) {
       (current as unknown as Record<string, unknown>)[key] = clone((source as unknown as Record<string, unknown>)[key]);
     }
-    await writeJson(path, current);
+    await writeJson(path, current, userId);
   }
   return targets.size;
 }
@@ -461,8 +483,8 @@ function lastAssistant(messages: ChatMessage[]): ChatMessage | null {
   return null;
 }
 
-async function processMemory(scope: string, chatId: string): Promise<MeguminProfile> {
-  const profile = await loadProfile(scope);
+async function processMemory(scope: string, chatId: string, userId?: string): Promise<MeguminProfile> {
+  const profile = await loadProfile(scope, userId);
   const mem = profile.memoryCore;
   const messages = await getMessages(chatId);
   const real = messages
@@ -495,7 +517,7 @@ async function processMemory(scope: string, chatId: string): Promise<MeguminProf
         content: "You are an expert narrative condenser. Summarize important story events and meaningful dialogue. Remove flowery prose and trivial motion. Do not quote dialogue unless necessary."
       },
       { role: "user", content: `Summarize this chat chunk clearly:\n\n<chat>\n${text}\n</chat>` }
-    ], { backend: mem.backend, presetKind: "engine", trigger: "memorySummary" });
+    ], { backend: mem.backend, presetKind: "engine", userId, trigger: "memorySummary" });
     mem.shortTermChunks.push({ id, startIndex, endIndex, summary, timestamp: Date.now() });
     archivedIds.add(id);
   }
@@ -514,11 +536,11 @@ async function processMemory(scope: string, chatId: string): Promise<MeguminProf
     }
   }
 
-  return saveProfile(scope, profile);
+  return saveProfile(scope, profile, userId);
 }
 
-async function scanNpcBlocks(scope: string, chatId: string): Promise<MeguminProfile> {
-  const profile = await loadProfile(scope);
+async function scanNpcBlocks(scope: string, chatId: string, userId?: string): Promise<MeguminProfile> {
+  const profile = await loadProfile(scope, userId);
   if (!profile.npcBank.enabled) return profile;
   const messages = await getMessages(chatId);
   const assistant = lastAssistant(messages);
@@ -533,7 +555,7 @@ async function scanNpcBlocks(scope: string, chatId: string): Promise<MeguminProf
     existing.add(npc.name.trim().toLowerCase());
     changed = true;
   }
-  return changed ? saveProfile(scope, profile) : profile;
+  return changed ? saveProfile(scope, profile, userId) : profile;
 }
 
 function parseImageTag(content: string): { prompt: string; cleaned: string } | null {
@@ -542,21 +564,21 @@ function parseImageTag(content: string): { prompt: string; cleaned: string } | n
   return { prompt: match[1].trim(), cleaned: content.replace(match[0], "").trim() };
 }
 
-async function resolveImageConnection(profile: MeguminProfile): Promise<any | null> {
+async function resolveImageConnection(profile: MeguminProfile, userId?: string): Promise<any | null> {
   try {
     if (profile.imageGen.connectionId) {
-      return await spindle.imageGen.getConnection(profile.imageGen.connectionId);
+      return await spindle.imageGen.getConnection(profile.imageGen.connectionId, userId);
     }
-    const connections = await spindle.imageGen.listConnections();
+    const connections = await spindle.imageGen.listConnections(userId);
     return connections.find((connection: any) => connection.is_default) || connections[0] || null;
   } catch {
     return null;
   }
 }
 
-async function generateImageForChat(scope: string, chatId: string, prompt: string, attachToMessageId?: string): Promise<{ imageId?: string; imageUrl?: string; prompt: string }> {
-  const profile = await loadProfile(scope);
-  const connection = await resolveImageConnection(profile);
+async function generateImageForChat(scope: string, chatId: string, prompt: string, attachToMessageId?: string, userId?: string): Promise<{ imageId?: string; imageUrl?: string; prompt: string }> {
+  const profile = await loadProfile(scope, userId);
+  const connection = await resolveImageConnection(profile, userId);
   const parameters: Record<string, unknown> = {
     width: profile.imageGen.imgWidth,
     height: profile.imageGen.imgHeight,
@@ -642,16 +664,16 @@ async function generateWritingStyleInsights(input: any, userId?: string): Promis
   ], { backend: "preset", presetKind: "engine", userId, trigger: "dummyOrder" });
 }
 
-async function handlePostGeneration(chatId: string): Promise<void> {
-  const context = await getChatContext(chatId);
-  const profile = await loadProfile(context.scope);
+async function handlePostGeneration(chatId: string, userId?: string): Promise<void> {
+  const context = await getChatContext(chatId, userId);
+  const profile = await loadProfile(context.scope, userId);
   const messages = await getMessages(chatId);
-  await scanNpcBlocks(context.scope, chatId);
+  await scanNpcBlocks(context.scope, chatId, userId);
 
   if (profile.memoryCore.enabled && profile.memoryCore.triggerMode === "frequency") {
     const aiCount = messages.filter((message) => message.role === "assistant").length;
     if (aiCount > 0 && aiCount % Math.max(1, profile.memoryCore.autoFreq || 10) === 0) {
-      processMemory(context.scope, chatId).catch((err: unknown) => spindle.log.warn(`Memory scan failed: ${String(err)}`));
+      processMemory(context.scope, chatId, userId).catch((err: unknown) => spindle.log.warn(`Memory scan failed: ${String(err)}`));
     }
   }
 
@@ -660,15 +682,15 @@ async function handlePostGeneration(chatId: string): Promise<void> {
   const imageTag = parseImageTag(assistant.content);
   if (!imageTag) return;
   await spindle.chat.updateMessage(chatId, assistant.id, { content: imageTag.cleaned, skipChunkRebuild: true });
-  await generateImageForChat(context.scope, chatId, imageTag.prompt, assistant.id);
+  await generateImageForChat(context.scope, chatId, imageTag.prompt, assistant.id, userId);
 }
 
 async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
   const context = await getActiveContext(userId);
   switch (payload.type) {
     case "bootstrap": {
-      const profile = await loadProfile(context.scope);
-      const customEngines = await getCustomEngines();
+      const profile = await loadProfile(context.scope, userId);
+      const customEngines = await getCustomEngines(userId);
       const chatMessages = await getMessages(context.chatId);
       let imageConnections: any[] = [];
       try {
@@ -690,35 +712,36 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
     }
     case "profile:save": {
       const profile = mergeProfile((payload.payload as any)?.profile);
-      return { profile: await saveProfile(context.scope, profile), context };
+      const scope = safeProfileScope((payload.payload as any)?.scope, context.scope);
+      return { profile: await saveProfile(scope, profile, userId), context };
     }
     case "profile:syncTab": {
       const keys = Array.isArray((payload.payload as any)?.keys) ? (payload.payload as any).keys.map(String) : [];
-      const syncedTargets = await syncProfileKeysFrom(context.scope, keys);
-      return { profile: await loadProfile(context.scope), context, syncedTargets };
+      const syncedTargets = await syncProfileKeysFrom(context.scope, keys, userId);
+      return { profile: await loadProfile(context.scope, userId), context, syncedTargets };
     }
     case "profile:reset":
-      await saveProfile(context.scope, DEFAULT_PROFILE);
-      return { profile: await loadProfile(context.scope), context };
+      await saveProfile(context.scope, DEFAULT_PROFILE, userId);
+      return { profile: await loadProfile(context.scope, userId), context };
     case "engine:save": {
       const engine = (payload.payload as any)?.engine as EngineMode;
       if (!engine?.id) throw new Error("Engine id is required");
-      const engines = await getCustomEngines();
+      const engines = await getCustomEngines(userId);
       const index = engines.findIndex((item) => item.id === engine.id);
       if (index >= 0) engines[index] = engine;
       else engines.push(engine);
-      await saveCustomEngines(engines);
+      await saveCustomEngines(engines, userId);
       return { customEngines: engines, engines: allEngines(engines) };
     }
     case "engine:delete": {
       const id = String((payload.payload as any)?.id || "");
-      const engines = (await getCustomEngines()).filter((engine) => engine.id !== id);
-      await saveCustomEngines(engines);
+      const engines = (await getCustomEngines(userId)).filter((engine) => engine.id !== id);
+      await saveCustomEngines(engines, userId);
       return { customEngines: engines, engines: allEngines(engines) };
     }
     case "story:generate": {
       if (!context.chatId) throw new Error("Open a chat before generating a story plan");
-      const profile = await loadProfile(context.scope);
+      const profile = await loadProfile(context.scope, userId);
       const messages = await getMessages(context.chatId);
       const plan = await generateQuiet([
         { role: "system", content: "You are an expert story architect. Brainstorm medium-to-long-term plot developments. Do not write actions, thoughts, or dialogue for the user character." },
@@ -726,11 +749,11 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
       ], { backend: profile.storyPlan.backend, presetKind: "engine", userId, trigger: "storyPlan" });
       profile.storyPlan.currentPlan = plan;
       profile.storyPlan.enabled = true;
-      return { profile: await saveProfile(context.scope, profile), plan };
+      return { profile: await saveProfile(context.scope, profile, userId), plan };
     }
     case "banlist:analyze": {
       if (!context.chatId) throw new Error("Open a chat before analyzing style");
-      const profile = await loadProfile(context.scope);
+      const profile = await loadProfile(context.scope, userId);
       const messages = await getMessages(context.chatId);
       const analysis = await generateQuiet([
         { role: "system", content: "Identify the 5 most repetitive cliche or overused stylistic patterns. Return only short generalized rules separated by commas." },
@@ -738,31 +761,31 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
       ], { backend: profile.banListBackend, presetKind: "engine", userId, trigger: "banList" });
       const phrases = analysis.split(/[,\n-]+/).map((item) => item.trim().replace(/^["']|["']$/g, "")).filter((item) => item.length > 3);
       for (const phrase of phrases) if (!profile.banList.includes(phrase)) profile.banList.push(phrase);
-      return { profile: await saveProfile(context.scope, profile), added: phrases };
+      return { profile: await saveProfile(context.scope, profile, userId), added: phrases };
     }
     case "memory:process": {
       if (!context.chatId) throw new Error("Open a chat before processing memory");
-      return { profile: await processMemory(context.scope, context.chatId) };
+      return { profile: await processMemory(context.scope, context.chatId, userId) };
     }
     case "npc:scan": {
       if (!context.chatId) throw new Error("Open a chat before scanning NPCs");
-      return { profile: await scanNpcBlocks(context.scope, context.chatId) };
+      return { profile: await scanNpcBlocks(context.scope, context.chatId, userId) };
     }
     case "npc:portrait": {
       if (!context.chatId) throw new Error("Open a chat before generating portraits");
       const name = String((payload.payload as any)?.name || "");
-      const profile = await loadProfile(context.scope);
+      const profile = await loadProfile(context.scope, userId);
       const npc = profile.npcBank.npcs.find((item) => item.name === name);
       if (!npc) throw new Error("NPC not found");
       const prompt = await generateQuiet([
         { role: "system", content: "You are an expert image prompt engineer specializing in character portraits. Return only the image prompt." },
         { role: "user", content: `Create a portrait prompt from this NPC dossier:\n\n${npcBuildText(npc)}` }
       ], { backend: profile.imageGen.generatorBackend, presetKind: "image", userId, trigger: "npcPortrait" });
-      const image = await generateImageForChat(context.scope, context.chatId, prompt);
+      const image = await generateImageForChat(context.scope, context.chatId, prompt, undefined, userId);
       npc.pfpImageId = image.imageId;
       npc.pfpImageUrl = image.imageUrl;
       npc.pfp = image.imageUrl || "";
-      return { profile: await saveProfile(context.scope, profile), image };
+      return { profile: await saveProfile(context.scope, profile, userId), image };
     }
     case "npc:uploadPortrait": {
       if (!context.chatId) throw new Error("Open a chat before uploading portraits");
@@ -770,7 +793,7 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
       const dataUrl = String((payload.payload as any)?.dataUrl || "");
       const filename = String((payload.payload as any)?.filename || "npc-portrait.png");
       if (!dataUrl.startsWith("data:image/")) throw new Error("Choose an image file for the NPC portrait");
-      const profile = await loadProfile(context.scope);
+      const profile = await loadProfile(context.scope, userId);
       const npc = profile.npcBank.npcs.find((item) => item.name === name);
       if (!npc) throw new Error("NPC not found");
       const uploaded = await spindle.images.uploadFromDataUrl(dataUrl, {
@@ -781,24 +804,24 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
       npc.pfpImageId = uploaded?.id;
       npc.pfpImageUrl = uploaded?.url;
       npc.pfp = uploaded?.url || "";
-      return { profile: await saveProfile(context.scope, profile), image: uploaded };
+      return { profile: await saveProfile(context.scope, profile, userId), image: uploaded };
     }
     case "image:connections": {
       return { imageConnections: await spindle.imageGen.listConnections(userId) };
     }
     case "image:prompt": {
       if (!context.chatId) throw new Error("Open a chat before generating an image prompt");
-      const profile = await loadProfile(context.scope);
+      const profile = await loadProfile(context.scope, userId);
       const messages = await getMessages(context.chatId);
       return { prompt: await generateImagePromptFromChat(profile, messages, userId) };
     }
     case "image:manual": {
       if (!context.chatId) throw new Error("Open a chat before generating an image");
-      const profile = await loadProfile(context.scope);
+      const profile = await loadProfile(context.scope, userId);
       const messages = await getMessages(context.chatId);
       const prompt = String((payload.payload as any)?.prompt || "").trim() || await generateImagePromptFromChat(profile, messages, userId);
       const target = lastAssistant(messages);
-      const image = await generateImageForChat(context.scope, context.chatId, prompt, target?.id);
+      const image = await generateImageForChat(context.scope, context.chatId, prompt, target?.id, userId);
       return { image };
     }
     case "style:generate": {
@@ -819,8 +842,8 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
     case "preset:status":
       return { presetBridge: await presetBridgeStatus(userId) };
     case "preset:audit": {
-      const profile = await loadProfile(context.scope);
-      const customEngines = await getCustomEngines();
+      const profile = await loadProfile(context.scope, userId);
+      const customEngines = await getCustomEngines(userId);
       const chatMessages = await getMessages(context.chatId);
       return { presetAudit: await presetContractAudit(profile, customEngines, chatMessages, context, userId), presetBridge: await presetBridgeStatus(userId) };
     }
@@ -874,9 +897,9 @@ spindle.registerInterceptor(async (messages: any[], generationContext: any) => {
   }
   if (utilityBypassDepth > 0 && generationContext?.generationType === "quiet") return messages;
   const chatId = generationContext?.chatId || null;
-  const context = await getChatContext(chatId);
-  const profile = await loadProfile(context.scope);
-  const customEngines = await getCustomEngines();
+  const context = await getChatContext(chatId, generationContext?.userId);
+  const profile = await loadProfile(context.scope, generationContext?.userId);
+  const customEngines = await getCustomEngines(generationContext?.userId);
   const chatMessages = await getMessages(context.chatId);
   const result = buildPromptMessages(messages, chatMessages, profile, customEngines, context);
   if (profile.toggles.promptPreview) {
@@ -898,7 +921,7 @@ spindle.registerInterceptor(async (messages: any[], generationContext: any) => {
 try {
   spindle.on("GENERATION_ENDED", (payload: any) => {
     const chatId = payload?.chatId;
-    if (chatId) handlePostGeneration(chatId).catch((err) => spindle.log.warn(`Megumin post-generation failed: ${String(err)}`));
+    if (chatId) handlePostGeneration(chatId, payload?.userId).catch((err) => spindle.log.warn(`Megumin post-generation failed: ${String(err)}`));
   });
 } catch {
   // Generation event permission may not be granted yet; the rest of the extension still works.

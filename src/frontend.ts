@@ -132,8 +132,10 @@ let appMount: any = null;
 let floatWidget: any = null;
 let removeStyle: (() => void) | null = null;
 let cleanupTagInterceptor: (() => void) | null = null;
+let eventUnsubscribers: Array<() => void> = [];
 let pending = new Map<string, { resolve: (value: any) => void; reject: (err: Error) => void }>();
 let seq = 0;
+let contextRefreshPromise: Promise<void> | null = null;
 
 const state: AppState = {
   ready: false,
@@ -204,7 +206,7 @@ export function setup(ctx: SpindleFrontendContext) {
   });
   floatWidget.root.className = "meg-float";
   floatWidget.root.innerHTML = `<button class="meg-float-btn" title="Megumin Suite" type="button" aria-label="Megumin Suite">${icon("fa-wand-magic-sparkles")}</button>`;
-  floatWidget.root.querySelector("button")?.addEventListener("click", () => openApp());
+  bindFloatWidgetButton(floatWidget.root.querySelector("button"));
 
   const unsubscribeBackend = ctxRef.onBackendMessage((payload: unknown) => {
     const response = payload as RpcResponse;
@@ -224,6 +226,7 @@ export function setup(ctx: SpindleFrontendContext) {
     { tagName: "megumin-image", removeFromMessage: true },
     (payload: any) => renderMeguminImageTag(payload)
   );
+  eventUnsubscribers = subscribeContextEvents();
 
   bootstrap().catch((err) => {
     state.status = err.message;
@@ -232,12 +235,59 @@ export function setup(ctx: SpindleFrontendContext) {
 
   return () => {
     unsubscribeBackend?.();
+    for (const unsubscribe of eventUnsubscribers) unsubscribe?.();
+    eventUnsubscribers = [];
     cleanupTagInterceptor?.();
     floatWidget?.destroy?.();
     appMount?.destroy?.();
     removeStyle?.();
     ctxRef?.dom.cleanup?.();
   };
+}
+
+function bindFloatWidgetButton(button: HTMLButtonElement | null | undefined) {
+  if (!button) return;
+  const threshold = 6;
+  let start: { x: number; y: number } | null = null;
+  let suppressClick = false;
+
+  button.addEventListener("pointerdown", (event) => {
+    start = { x: event.clientX, y: event.clientY };
+    suppressClick = false;
+  });
+  button.addEventListener("pointermove", (event) => {
+    if (!start) return;
+    const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+    if (moved > threshold) suppressClick = true;
+  });
+  button.addEventListener("pointerup", (event) => {
+    if (!start) return;
+    const moved = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+    if (moved > threshold) suppressClick = true;
+    start = null;
+  });
+  button.addEventListener("pointercancel", () => {
+    start = null;
+    suppressClick = true;
+  });
+  button.addEventListener("click", (event) => {
+    if (suppressClick) {
+      suppressClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    openApp();
+  }, true);
+}
+
+function subscribeContextEvents(): Array<() => void> {
+  const on = ctxRef?.events?.on?.bind(ctxRef.events);
+  if (!on) return [];
+  const events = ["CHAT_SWITCHED", "CHAT_CHANGED", "CHARACTER_AVATAR_CHANGED"];
+  return events
+    .map((eventName) => on(eventName, () => { void refreshActiveContext(); }))
+    .filter((unsubscribe): unsubscribe is () => void => typeof unsubscribe === "function");
 }
 
 async function request<T = any>(type: string, payload?: unknown): Promise<T> {
@@ -289,6 +339,20 @@ async function bootstrap() {
   render();
 }
 
+async function refreshActiveContext() {
+  if (contextRefreshPromise) return contextRefreshPromise;
+  contextRefreshPromise = (async () => {
+    await flushProfileSave();
+    await bootstrap();
+  })().catch((err) => {
+    state.status = err instanceof Error ? err.message : "Refresh failed";
+    render();
+  }).finally(() => {
+    contextRefreshPromise = null;
+  });
+  return contextRefreshPromise;
+}
+
 async function refreshPresetAudit() {
   try {
     const data = await request<any>("preset:audit");
@@ -305,7 +369,15 @@ function openApp() {
   render();
 }
 
-function closeApp() {
+let closingApp = false;
+async function closeApp(options: { save?: boolean } = {}) {
+  if (closingApp) return;
+  closingApp = true;
+  try {
+    if (options.save && !await flushProfileSave()) return;
+  } finally {
+    closingApp = false;
+  }
   state.visible = false;
   appMount?.setVisible(false);
 }
@@ -391,6 +463,10 @@ function heroName(): string {
 
 function wire(container: HTMLElement) {
   mountDnrPanel(container);
+  container.querySelector<HTMLElement>(".meg-overlay")?.addEventListener("click", (event) => {
+    if (event.target !== event.currentTarget) return;
+    void closeApp({ save: true });
+  });
   container.querySelectorAll<HTMLElement>("[data-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       state.devMode = false;
@@ -571,29 +647,56 @@ function readInputValue(input: HTMLInputElement | HTMLTextAreaElement | HTMLSele
 }
 
 let saveTimer: number | null = null;
-function saveProfileSoon() {
-  if (saveTimer) window.clearTimeout(saveTimer);
+let profileDirty = false;
+let savePromise: Promise<boolean> | null = null;
+
+async function saveProfileToBackend(): Promise<boolean> {
   state.saving = true;
   state.status = "Saving...";
-  saveTimer = window.setTimeout(async () => {
-    try {
-      const data = await request<any>("profile:save", { profile: state.profile });
-      state.profile = mergeProfile(data.profile);
-      await refreshPresetAudit();
-      state.status = "Saved";
-    } catch (err) {
-      state.status = err instanceof Error ? err.message : "Save failed";
-    } finally {
-      state.saving = false;
-      render();
-    }
-  }, 250);
+  try {
+    const data = await request<any>("profile:save", { profile: state.profile, scope: state.context?.scope });
+    state.profile = mergeProfile(data.profile);
+    await refreshPresetAudit();
+    state.status = "Saved";
+    return true;
+  } catch (err) {
+    profileDirty = true;
+    state.status = err instanceof Error ? err.message : "Save failed";
+    return false;
+  } finally {
+    state.saving = false;
+    render();
+  }
+}
+
+async function flushProfileSave(): Promise<boolean> {
+  if (saveTimer) {
+    window.clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  if (savePromise) await savePromise;
+  if (!profileDirty) return true;
+  profileDirty = false;
+  savePromise = saveProfileToBackend();
+  try {
+    return await savePromise;
+  } finally {
+    savePromise = null;
+  }
+}
+
+function saveProfileSoon() {
+  if (saveTimer) window.clearTimeout(saveTimer);
+  profileDirty = true;
+  state.saving = true;
+  state.status = "Saving...";
+  saveTimer = window.setTimeout(() => { void flushProfileSave(); }, 250);
 }
 
 async function handleAction(el: HTMLElement) {
   const action = el.dataset.action;
   try {
-    if (action === "close") return closeApp();
+    if (action === "close") return closeApp({ save: true });
     if (action === "open-dev") {
       state.devMode = !state.devMode;
       state.styleEditorId = null;
@@ -604,6 +707,7 @@ async function handleAction(el: HTMLElement) {
     if (action === "refresh") {
       state.status = "Refreshing...";
       render();
+      await flushProfileSave();
       await bootstrap();
       return;
     }
