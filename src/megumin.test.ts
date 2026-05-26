@@ -53,9 +53,9 @@ describe("Megumin UI parity audit", () => {
       "id=\"ig_enable_card\"",
       "id=\"npc_enable_card\"",
       "id=\"mem_enable_card\"",
-      "id=\"dnr_slider\"",
-      "id=\"lbl_narr\"",
-      "id=\"dnr_preview\"",
+      "slider.id = \"dnr_slider\"",
+      "narrValue.id = \"lbl_narr\"",
+      "preview.id = \"dnr_preview\"",
       "meg-manual-image-prompt",
       "data-action=\"image-manual\"",
       "data-action=\"ban-import\"",
@@ -76,9 +76,25 @@ describe("Megumin UI parity audit", () => {
       "updateSaveIndicator",
       "statusClearTimer",
       "shouldRenderAfterBind",
-      "syncRangeInput",
-      "::-webkit-slider-thumb",
-      "::-moz-range-thumb"
+      "ST_PARITY_CSS",
+      "@import url('https://fonts.googleapis.com/css2?family=Inter",
+      ".mtab-card-grid {",
+      "grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));",
+      ".ps-modern-input {",
+      "padding: 12px 16px;",
+      "font-size: 0.85rem;",
+      ".ps-modern-btn {",
+      "font-weight: 600;",
+      ".mtab-param-row input[type=\"range\"]",
+      "accent-color: var(--gold);",
+      "id=\"ps_btn_reset\"",
+      "fa-floppy-disk",
+      "fa-shield-halved",
+      "fa-right-from-bracket",
+      "fa-pen-to-square",
+      "fa-code-branch",
+      "fa-clock",
+      "fa-align-left"
     ];
     for (const label of requiredLabels) expect(frontendSource).toContain(label);
 
@@ -96,6 +112,10 @@ describe("Megumin UI parity audit", () => {
     expect(frontendSource).not.toContain("--accent:${engine.color");
     expect(frontendSource).not.toContain("data-action=\"image-manual\"><span");
     expect(frontendSource).not.toContain("floatWidget.root.querySelector(\"button\")?.addEventListener(\"click\", () => openApp())");
+    expect(frontendSource).not.toContain("syncRangeInput");
+    expect(frontendSource).not.toContain("::-webkit-slider-thumb");
+    expect(frontendSource).not.toContain("::-moz-range-thumb");
+    expect(frontendSource).not.toContain("color-mix(");
     expect(spindleManifest.permissions).toContain("presets");
     expect(backendSource).toContain("preset:resolve");
     expect(backendSource).toContain("preset:status");
@@ -111,8 +131,9 @@ describe("Megumin UI parity audit", () => {
     expect(backendSource).not.toContain("spindle.userStorage");
     expect(backendSource).toContain("safeProfileScope");
     expect(frontendSource).not.toContain(".mtab-panel, .wstyle-dnr-panel");
-    expect(frontendSource).toContain(".wstyle-dnr-label.narr { color:#a855f7");
-    expect(frontendSource).toContain(".wstyle-dnr-label.dial { color:#10b981");
+    const compactFrontend = frontendSource.replace(/\s+/g, "");
+    expect(compactFrontend).toContain(".wstyle-dnr-label.narr{color:#a855f7");
+    expect(compactFrontend).toContain(".wstyle-dnr-label.dial{color:#10b981");
     expect(frontendSource).toContain("if (shouldRenderAfterBind(input)) render();");
   });
 });
