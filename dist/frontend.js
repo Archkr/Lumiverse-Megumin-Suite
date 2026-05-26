@@ -630,6 +630,7 @@ var state = {
   imageConnections: [],
   uiAssets: { heroImages: [] },
   presetBridge: { available: false },
+  presetAudit: {},
   status: "Loading..."
 };
 var MEGUMIN_PARITY_LABELS = {
@@ -679,6 +680,10 @@ function setup(ctx) {
   floatWidget.root.querySelector("button")?.addEventListener("click", () => openApp());
   const unsubscribeBackend = ctxRef.onBackendMessage((payload) => {
     const response = payload;
+    if (payload?.type === "prompt:preview") {
+      showPromptPreview(payload.payload);
+      return;
+    }
     if (!response?.requestId)
       return;
     const waiter = pending.get(response.requestId);
@@ -712,6 +717,37 @@ async function request(type, payload) {
   ctxRef.sendToBackend({ type, requestId, payload });
   return promise;
 }
+async function pickOneFile(accept, maxSizeBytes) {
+  const files = await ctxRef?.uploads?.pickFile?.({ accept, multiple: false, maxSizeBytes });
+  return Array.isArray(files) ? files[0] || null : null;
+}
+function bytesToDataUrl(bytes, mimeType) {
+  let binary = "";
+  const chunkSize = 32768;
+  for (let index = 0;index < bytes.length; index += chunkSize) {
+    const chunk = bytes.slice(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return `data:${mimeType || "application/octet-stream"};base64,${btoa(binary)}`;
+}
+function showPromptPreview(payload) {
+  if (!state.profile.toggles.promptPreview)
+    return;
+  const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+  const body = messages.map((message, index) => `#${index + 1} ${String(message.role || "system").toUpperCase()}
+${String(message.content || "")}`).join(`
+
+---
+
+`);
+  const text = `Megumin Prompt Preview
+Estimated Megumin payload: ~${Number(payload?.estimatedInjectionTokens || 0)} tokens
+
+${body}`;
+  window.alert(text.length > 14000 ? `${text.slice(0, 14000)}
+
+[Preview truncated]` : text);
+}
 async function bootstrap() {
   const data = await request("bootstrap");
   state.context = data.context;
@@ -722,9 +758,17 @@ async function bootstrap() {
   state.imageConnections = data.imageConnections || [];
   state.uiAssets = data.uiAssets || { heroImages: [] };
   state.presetBridge = data.presetBridge || { available: false };
+  state.presetAudit = data.presetAudit || {};
   state.ready = true;
-  state.status = "Ready";
+  state.status = "";
   render();
+}
+async function refreshPresetAudit() {
+  try {
+    const data = await request("preset:audit");
+    state.presetAudit = data.presetAudit || state.presetAudit;
+    state.presetBridge = data.presetBridge || state.presetBridge;
+  } catch {}
 }
 function openApp() {
   state.visible = true;
@@ -755,11 +799,11 @@ function render() {
             <div class="hero-overlay"></div>
             <div class="top-app-bar">
               <div class="app-actions">
-                <div class="live-token-count" title="Estimated Payload Tokens">${icon("fa-microchip")} ~${estimatePayloadTokens()}</div>
+                <div class="live-token-count" title="${escapeHtml(payloadTokenTitle())}">${icon("fa-microchip")} ~${payloadTokenCount()}</div>
                 <button id="btn_apply_tab_all" type="button" class="ps-modern-btn secondary gold" data-action="sync-tab">${icon("fa-earth-americas")} Sync Tab Globally</button>
                 <button id="ps_btn_reset_rule" type="button" class="ps-modern-btn secondary danger" data-action="reset">${icon("fa-rotate-left")} Reset</button>
                 <button id="ps_btn_dev_mode" type="button" class="ps-modern-btn secondary purple ${state.devMode ? "active" : ""}" data-action="open-dev">${icon("fa-code")} ${state.devMode ? "Exit Dev" : "Dev"}</button>
-                <span class="ps-save-indicator ${state.saving ? "saving" : ""}">${escapeHtml(state.status)}</span>
+                ${state.status ? `<span class="ps-save-indicator ${state.saving ? "saving" : ""}">${escapeHtml(state.status)}</span>` : ""}
                 <button id="ps_btn_save_close" type="button" class="ps-modern-btn primary" data-action="close">${icon("fa-save")} Save & Close</button>
               </div>
             </div>
@@ -831,9 +875,18 @@ function wire(container) {
       input.addEventListener("input", () => {
         const path = input.dataset.bind;
         setPath(state.profile, path, readInputValue(input));
+        if (path === "dnRatio.dialogue")
+          updateDnrUi(container, Number(readInputValue(input)));
         saveProfileSoon();
       });
     }
+  });
+  container.querySelector("#dnr_header_toggle")?.addEventListener("click", (event) => {
+    if (event.target.closest("button,input,select,textarea"))
+      return;
+    state.profile.dnRatio.enabled = !state.profile.dnRatio.enabled;
+    saveProfileSoon();
+    render();
   });
   container.querySelector("#ig_res_preset")?.addEventListener("change", (event) => {
     const index = Number(event.currentTarget.value);
@@ -860,6 +913,23 @@ function wire(container) {
       if (input)
         input.value = select.value || "";
       select.selectedIndex = 0;
+    });
+  });
+  container.querySelectorAll(".npc-field-edit").forEach((input) => {
+    input.addEventListener("change", () => {
+      const card = input.closest("[data-npc-name]");
+      const name = card?.dataset.npcName || "";
+      const npc = state.profile.npcBank.npcs.find((item) => item.name === name);
+      if (!npc || !input.dataset.field)
+        return;
+      npc[input.dataset.field] = input.value;
+      saveProfileSoon();
+    });
+  });
+  container.querySelector("#mem_vault_search")?.addEventListener("input", (event) => {
+    const query = event.currentTarget.value.trim().toLowerCase();
+    container.querySelectorAll("#mem_vault_list .mem-accordion").forEach((item) => {
+      item.style.display = !query || item.textContent?.toLowerCase().includes(query) ? "" : "none";
     });
   });
   container.querySelector("#dev_import_file")?.addEventListener("change", (event) => {
@@ -903,6 +973,7 @@ function saveProfileSoon() {
     try {
       const data = await request("profile:save", { profile: state.profile });
       state.profile = mergeProfile(data.profile);
+      await refreshPresetAudit();
       state.status = "Saved";
     } catch (err) {
       state.status = err instanceof Error ? err.message : "Save failed";
@@ -935,6 +1006,7 @@ async function handleAction(el) {
         return;
       const data = await request("profile:reset");
       state.profile = mergeProfile(data.profile);
+      await refreshPresetAudit();
       state.status = "Reset";
       state.devMode = false;
       state.devEditorId = null;
@@ -944,6 +1016,7 @@ async function handleAction(el) {
     if (action === "sync-tab") {
       const data = await request("profile:syncTab", { keys: activeTabProfileKeys() });
       state.profile = mergeProfile(data.profile);
+      await refreshPresetAudit();
       state.status = "Synced";
       render();
       return;
@@ -993,11 +1066,81 @@ async function handleAction(el) {
     if (action === "style-template") {
       const template = (state.logic?.styleTemplates || [])[Number(el.dataset.index || 0)];
       if (template) {
-        state.profile.aiRule = template.notes || "";
-        state.profile.activeStyleId = null;
+        state.status = "Generating style...";
+        render();
+        const data = await request("style:generate", { name: template.name, notes: template.notes, tags: template.tags || [] });
+        const rule = String(data.rule || "").trim();
+        if (!rule)
+          throw new Error("Style generation returned empty output");
+        const id = `style_${Date.now()}`;
+        const newStyle = { id, name: template.name, notes: template.notes || "", rule };
+        state.profile.customStyles = [...state.profile.customStyles || [], newStyle];
+        state.profile.activeStyleId = id;
+        state.profile.aiRule = rule;
         saveProfileSoon();
         render();
       }
+      return;
+    }
+    if (action === "style-generate-rule") {
+      const name = (root().querySelector("#style-name")?.value || "Custom AI Style").trim();
+      const notes = (root().querySelector("#style-notes")?.value || "").trim();
+      state.status = "Generating style...";
+      const data = await request("style:generate", { name, notes });
+      const rule = String(data.rule || "").trim();
+      const ruleArea = root().querySelector("#style-rule");
+      if (ruleArea)
+        ruleArea.value = rule;
+      state.profile.aiRule = rule || state.profile.aiRule;
+      state.status = rule ? "Done" : "Style generation returned empty output";
+      return;
+    }
+    if (action === "style-load-template") {
+      const select = root().querySelector("#style-template-select");
+      const template = (state.logic?.styleTemplates || [])[Number(select?.value || -1)];
+      if (!template)
+        return;
+      const nameInput = root().querySelector("#style-name");
+      const notesInput = root().querySelector("#style-notes");
+      const ruleInput = root().querySelector("#style-rule");
+      if (nameInput)
+        nameInput.value = template.name || "";
+      if (notesInput)
+        notesInput.value = template.notes || "";
+      if (ruleInput)
+        ruleInput.value = "";
+      return;
+    }
+    if (action === "style-insights") {
+      const name = (root().querySelector("#style-name")?.value || "Custom AI Style").trim();
+      const notes = (root().querySelector("#style-notes")?.value || "").trim();
+      state.status = "Generating insights...";
+      const data = await request("style:insights", { name, notes });
+      const insights = String(data.insights || "").trim();
+      const notesArea = root().querySelector("#style-notes");
+      if (notesArea && insights)
+        notesArea.value = notes ? `${notes}
+
+${insights}` : insights;
+      state.status = insights ? "Done" : "No insights returned";
+      return;
+    }
+    if (action === "style-regenerate") {
+      const id = el.dataset.value || "";
+      const style = (state.profile.customStyles || []).find((item) => item.id === id);
+      if (!style)
+        return;
+      state.status = "Regenerating style...";
+      render();
+      const data = await request("style:generate", { name: style.name, notes: style.notes || style.rule });
+      const rule = String(data.rule || "").trim();
+      if (rule) {
+        style.rule = rule;
+        if (state.profile.activeStyleId === id)
+          state.profile.aiRule = rule;
+        saveProfileSoon();
+      }
+      render();
       return;
     }
     if (action === "style-save-custom") {
@@ -1077,7 +1220,22 @@ async function handleAction(el) {
     if (action === "npc-scan")
       return runTask("Scanning NPCs...", "npc:scan");
     if (action === "image-manual") {
-      const prompt = root().querySelector("#meg-manual-image-prompt")?.value || "";
+      let prompt = root().querySelector("#meg-manual-image-prompt")?.value || "";
+      if (state.profile.imageGen.previewPrompt) {
+        if (!prompt.trim()) {
+          state.status = "Building image prompt...";
+          render();
+          const data = await request("image:prompt");
+          prompt = String(data.prompt || "");
+        }
+        const edited = window.prompt("Image prompt", prompt);
+        if (edited === null) {
+          state.status = "";
+          render();
+          return;
+        }
+        prompt = edited;
+      }
       return runTask("Generating image...", "image:manual", { prompt });
     }
     if (action === "image-test")
@@ -1090,12 +1248,20 @@ async function handleAction(el) {
     if (action === "preset-ensure") {
       const data = await request("preset:resolve", { kind: el.dataset.kind || "engine" });
       state.presetBridge = data.presetBridge || state.presetBridge;
+      await refreshPresetAudit();
       state.status = data.preset?.name ? `${data.preset.name} found` : "Preset missing";
       render();
       return;
     }
     if (action === "npc-portrait")
       return runTask("Generating portrait...", "npc:portrait", { name: el.dataset.name });
+    if (action === "npc-upload") {
+      const file = await pickOneFile(["image/png", "image/jpeg", "image/webp", ".png", ".jpg", ".jpeg", ".webp"], 8 * 1024 * 1024);
+      if (!file)
+        return;
+      const dataUrl = bytesToDataUrl(file.bytes, file.mimeType || "image/png");
+      return runTask("Uploading portrait...", "npc:uploadPortrait", { name: el.dataset.name, dataUrl, filename: file.name });
+    }
     if (action === "npc-clear") {
       if (!state.profile.npcBank.npcs.length || !confirm("Clear all saved NPCs?"))
         return;
@@ -1128,6 +1294,21 @@ async function handleAction(el) {
       render();
       return;
     }
+    if (action === "ban-import") {
+      const file = await pickOneFile([".json", "application/json"], 1024 * 1024);
+      if (!file)
+        return;
+      const text = new TextDecoder().decode(file.bytes);
+      const parsed = JSON.parse(text);
+      const items = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.banList) ? parsed.banList : [];
+      for (const item of items.map(String).map((value) => value.trim()).filter(Boolean)) {
+        if (!state.profile.banList.includes(item))
+          state.profile.banList.push(item);
+      }
+      saveProfileSoon();
+      render();
+      return;
+    }
     if (action === "npc-remove") {
       state.profile.npcBank.npcs = state.profile.npcBank.npcs.filter((item) => item.name !== el.dataset.name);
       saveProfileSoon();
@@ -1149,7 +1330,7 @@ async function handleAction(el) {
       return;
     }
     if (action === "memory-test-vector") {
-      state.status = "Scanner ready";
+      state.status = "Scanner checked";
       render();
       return;
     }
@@ -1212,6 +1393,8 @@ async function runTask(status, type, payload) {
     state.profile = mergeProfile(data.profile);
   if (data.imageConnections)
     state.imageConnections = data.imageConnections;
+  if (data.profile)
+    await refreshPresetAudit();
   state.status = "Done";
   render();
 }
@@ -1274,6 +1457,7 @@ function renderEngines() {
   ];
   return `
     ${tabHeader("Core Engines", "Choose the narrative engine that drives your AI's behavior.", "fa-microchip", "#f59e0b", active?.label || state.profile.mode, "#10b981", "fa-circle-check")}
+    ${presetFeatureWarning(["core-engines"])}
     <div class="wstyle-filters">
       ${["all", "V4", "V5", "V6", "V7"].map((filter) => filterPill(filter, state.engineFilter === filter, engineCount(filter))).join("")}
     </div>
@@ -1335,16 +1519,18 @@ function renderStyle() {
       <span class="off-left"><span class="off-icon">${icon("fa-power-off")}</span><span><strong>No Style (Off)</strong><small>Let the engine decide &mdash; no extra style directives injected.</small></span></span>
       ${isOff ? `<span class="card-status active-status">${icon("fa-check")} Active</span>` : ""}
     </button>` : `<div class="wstyle-off-card locked-card"><span class="off-left"><span class="off-icon blue">${icon("fa-lock")}</span><span><strong>No Style (Off) - Locked</strong><small>V7 Engines require a narrative style directive. Defaulting to V7 Recommended.</small></span></span></div>`}
+    ${presetFeatureWarning(["writing-style"])}
     <div class="wstyle-dnr-panel">
-      <div class="wstyle-dnr-header">
+      <div class="wstyle-dnr-header" id="dnr_header_toggle">
         <div class="dnr-info"><div class="dnr-icon">${icon("fa-scale-balanced")}</div><div><strong>Dialogue / Narration Ratio</strong><small>Fine-tune the balance between spoken dialogue and descriptive prose.</small></div></div>
-        <button type="button" class="ps-toggle-card ${state.profile.dnRatio.enabled ? "active" : ""}" data-action="toggle" data-path="dnRatio.enabled"><span class="ps-switch"></span></button>
+        <button type="button" class="ps-toggle-card ${state.profile.dnRatio.enabled ? "active" : ""}" id="dnr_toggle" data-action="toggle" data-path="dnRatio.enabled"><span class="ps-switch"></span></button>
       </div>
-      <div class="wstyle-dnr-body ${state.profile.dnRatio.enabled ? "open" : ""}">
-        <div class="wstyle-dnr-slider-track"><span class="wstyle-dnr-label narr">${100 - state.profile.dnRatio.dialogue}% Narration</span><input type="range" min="0" max="100" step="10" data-bind="dnRatio.dialogue" value="${state.profile.dnRatio.dialogue}"><span class="wstyle-dnr-label dial">${state.profile.dnRatio.dialogue}% Dialogue</span></div>
-        <div class="dnr-preview">Preview - "Maintain a balance of ${state.profile.dnRatio.dialogue}% Dialogue and ${100 - state.profile.dnRatio.dialogue}% Narration."</div>
+      <div class="wstyle-dnr-body ${state.profile.dnRatio.enabled ? "open" : ""}" id="dnr_body">
+        <div class="wstyle-dnr-slider-track"><span class="wstyle-dnr-label narr"><span id="lbl_narr">${100 - state.profile.dnRatio.dialogue}</span>% Narration</span><input type="range" id="dnr_slider" min="0" max="100" step="10" data-bind="dnRatio.dialogue" value="${state.profile.dnRatio.dialogue}"><span class="wstyle-dnr-label dial"><span id="lbl_dial">${state.profile.dnRatio.dialogue}</span>% Dialogue</span></div>
+        <div class="dnr-preview" id="dnr_preview">Preview -> "Maintain a balance of <span id="lbl_prev_d">${state.profile.dnRatio.dialogue}</span>% Dialogue and <span id="lbl_prev_n">${100 - state.profile.dnRatio.dialogue}</span>% Narration."</div>
       </div>
     </div>
+    ${presetFeatureWarning(["dialogue-narration"])}
     <div class="wstyle-filters">
       ${stylePill("all", "All", directStyles.length + customStyles.length + genTemplates.length)}
       ${stylePill("precooked", "Precooked", directStyles.length, "fa-fire-burner")}
@@ -1363,6 +1549,7 @@ function renderGlobalSettings() {
   const customSettings = Array.isArray(activeMode?.customToggles) ? activeMode.customToggles.filter((item) => item.location === "settings") : [];
   return `
     ${tabHeader("Global Settings", "Toggle add-ons, set output preferences, and configure extras.", "fa-puzzle-piece", "#3b82f6", `${state.profile.addons.length} Active`, "#3b82f6", "fa-toggle-on")}
+    ${presetFeatureWarning(["global-settings", "gameplay-addons"])}
     <div class="wstyle-section-head blue">${icon("fa-puzzle-piece")} Gameplay Add-ons</div>
     <div class="mtab-card-grid">
       ${addons.map((item) => addonCard(item, isV6)).join("")}
@@ -1394,6 +1581,7 @@ function renderBlocks() {
   const customAddons = Array.isArray(activeMode?.customToggles) ? activeMode.customToggles.filter((item) => item.location === "addons") : [];
   return `
     ${tabHeader("Response Blocks", "Attach extra UI panels to every AI response.", "fa-cubes", "#10b981", `${state.profile.blocks.length} Active`, "#10b981", "fa-cubes")}
+    ${presetFeatureWarning(["response-blocks"])}
     <div class="mtab-card-grid">
       ${blocks.map((item) => moduleCard(item, state.profile.blocks.includes(item.id), "blocks", !!(activeMode && typeof activeMode[item.id] === "string" && activeMode[item.id].trim()))).join("")}
       ${customAddons.length ? `<div style="grid-column: 1 / -1;"><div class="wstyle-section-head green" style="margin:8px 0;">${icon("fa-puzzle-piece")} Custom Engine Add-ons</div></div>${customAddons.map((item) => infoCard({ title: item.name, sub: `Custom Module -> [[${item.attachPoint}]]`, active: !!state.profile.toggles[item.id], action: "toggle", path: `toggles.${item.id}` })).join("")}` : ""}
@@ -1404,6 +1592,7 @@ function renderThinking() {
   const currentLang = currentCotLang();
   return `
     ${tabHeader("Chain of Thought", "Configure the AI's thinking framework and reasoning depth.", "fa-brain", "#a855f7", "", "#a855f7")}
+    ${presetFeatureWarning(["chain-of-thought"])}
     <div class="wstyle-section-head purple">${icon("fa-gauge-high")} Thinking Effort</div>
     <div class="mtab-callout purple">${icon("fa-circle-info")} <span><strong>Hint:</strong> When using V7 CoT, it is highly recommended to <strong>not</strong> use low Thinking Effort.</span></div>
     <div class="mtab-card-grid compact">
@@ -1428,6 +1617,7 @@ function renderStory() {
   const sp = state.profile.storyPlan;
   return `
     ${tabHeader("Story Planner", "Brainstorm and track plot milestones automatically.", "fa-map-location-dot", "#f59e0b", sp.enabled ? "Enabled" : "Disabled", sp.enabled ? "#10b981" : "#a1a1aa", sp.enabled ? "fa-circle-check" : "fa-circle-xmark")}
+    ${presetFeatureWarning(["story-planner"])}
     <div id="sp_enable_card" class="mtab-toggle-row ${sp.enabled ? "active" : ""}" data-action="toggle" data-path="storyPlan.enabled" style="margin-bottom: 20px;">
       <div class="toggle-info"><div class="toggle-label">${icon("fa-map-location-dot")} Enable Story Planner</div><div class="toggle-desc">Just enable and hit generate plan now and let the ai do the rest.</div></div>
       <div class="ps-switch"></div>
@@ -1451,6 +1641,7 @@ function renderStory() {
 function renderBanList() {
   return `
     ${tabHeader("Dynamic Ban List", "Detect and ban overused phrases from AI responses.", "fa-ban", "#ef4444", `${state.profile.banList.length} Banned`, "#ef4444", "fa-ban")}
+    ${presetFeatureWarning(["dynamic-ban-list"])}
     <div class="mtab-panel" style="margin-bottom:16px;">
       <div class="panel-heading-row">
         <div class="mtab-panel-title purple">${icon("fa-radar")} AI Slop Detector</div>
@@ -1469,7 +1660,7 @@ function renderBanList() {
       <div class="wstyle-section-head red">${icon("fa-list")} Active Banned Phrases</div>
       <div class="mtab-btn-row">
         <input type="file" id="ps_import_bans_file" accept=".json" style="display: none;">
-        <button id="ps_btn_import_bans" class="ps-modern-btn secondary mini blue-text" type="button">${icon("fa-file-import")} Import</button>
+        <button id="ps_btn_import_bans" class="ps-modern-btn secondary mini blue-text" type="button" data-action="ban-import">${icon("fa-file-import")} Import</button>
         <button id="ps_btn_export_bans" class="ps-modern-btn secondary mini green-text" type="button" data-action="ban-export">${icon("fa-file-export")} Export</button>
         <button id="ps_btn_clear_bans" class="ps-modern-btn secondary danger mini" type="button" data-action="ban-clear">${icon("fa-trash-can")} Clear All</button>
       </div>
@@ -1485,6 +1676,7 @@ function renderImage() {
   const samplerOptions = ig.selectedSampler ? [["", "Loading Samplers..."], [ig.selectedSampler, ig.selectedSampler]] : [["", "Loading Samplers..."]];
   return `
     ${tabHeader("Image Generation", "ComfyUI integration for automatic scene rendering.", "fa-image", "#06b6d4", ig.enabled ? "Enabled" : "Disabled", ig.enabled ? "#10b981" : "#a1a1aa", ig.enabled ? "fa-circle-check" : "fa-circle-xmark")}
+    ${presetFeatureWarning(["image-generation"])}
     <div class="mtab-toggle-row ${ig.enabled ? "active" : ""}" id="ig_enable_card" data-action="toggle" data-path="imageGen.enabled" style="margin-bottom: 20px;">
       <div class="toggle-info"><div class="toggle-label">${icon("fa-image")} Enable Image Generation</div><div class="toggle-desc">Activate ComfyUI integration for this specific character/group.</div></div>
       <div class="ps-switch"></div>
@@ -1502,9 +1694,9 @@ function renderImage() {
       </div>
       <div style="display: flex; gap: 10px; align-items: center;">
         <select id="ig_workflow_list" class="ps-modern-input" data-bind="imageGen.currentWorkflowName" style="flex: 1; cursor: pointer;"><option value="">Default Lumiverse Workflow</option>${ig.currentWorkflowName ? `<option value="${escapeHtml(ig.currentWorkflowName)}" selected>${escapeHtml(ig.currentWorkflowName)}</option>` : ""}</select>
-        <button id="ig_new_wf" class="ps-modern-btn secondary" title="New Workflow" type="button">${icon("fa-plus")}</button>
-        <button id="ig_edit_wf" class="ps-modern-btn secondary" title="Edit JSON" type="button">${icon("fa-pen")}</button>
-        <button id="ig_del_wf" class="ps-modern-btn secondary danger" title="Delete" type="button">${icon("fa-trash-can")}</button>
+        <button id="ig_new_wf" class="ps-modern-btn secondary" title="New Workflow" type="button" style="display:none;" aria-hidden="true" tabindex="-1">${icon("fa-plus")}</button>
+        <button id="ig_edit_wf" class="ps-modern-btn secondary" title="Edit JSON" type="button" style="display:none;" aria-hidden="true" tabindex="-1">${icon("fa-pen")}</button>
+        <button id="ig_del_wf" class="ps-modern-btn secondary danger" title="Delete" type="button" style="display:none;" aria-hidden="true" tabindex="-1">${icon("fa-trash-can")}</button>
       </div>
     </div>
     <div class="mtab-panel" style="margin-bottom:16px;">
@@ -1521,6 +1713,13 @@ function renderImage() {
         </div>
         <input type="text" id="ig_extra" class="ps-modern-input" data-bind="imageGen.promptExtra" placeholder="Extra Instructions (e.g. moody lighting, dark atmosphere...)" value="${escapeHtml(ig.promptExtra)}" style="padding: 8px; font-size: 0.8rem;" />
       </div>
+    </div>
+    <div class="mtab-panel" style="margin-bottom:16px;">
+      <div class="panel-heading-row">
+        <div class="mtab-panel-title blue">${icon("fa-image")} Manual Generation</div>
+        <button id="ig_btn_manual" class="wstyle-gen-btn" type="button" data-action="image-manual">${icon("fa-bolt")} Generate Image</button>
+      </div>
+      <textarea id="meg-manual-image-prompt" class="ps-modern-input" placeholder="Leave blank to generate a prompt from the current chat."></textarea>
     </div>
     <div class="mtab-panel" style="margin-bottom:16px;">
       <div class="mtab-panel-title gold">${icon("fa-sliders")} Image Parameters</div>
@@ -1551,6 +1750,7 @@ function renderNpc() {
   const bank = state.profile.npcBank;
   return `
     ${tabHeader("NPCs Bank", "Automatically extract and track significant NPCs in the story.", "fa-address-book", "#f43f5e", bank.enabled ? "Enabled" : "Disabled", bank.enabled ? "#10b981" : "#a1a1aa", bank.enabled ? "fa-circle-check" : "fa-circle-xmark")}
+    ${presetFeatureWarning(["npc-bank"])}
     <div class="mtab-panel">
       <div id="npc_enable_card" class="mtab-toggle-row ${bank.enabled ? "active" : ""}" data-action="toggle" data-path="npcBank.enabled" style="margin-bottom: 10px;"><div class="toggle-info"><div class="toggle-label">${icon("fa-users")} Enable NPC Bank</div><div class="toggle-desc">When enabled, the AI generates detailed dossiers for new NPCs, which are saved here and injected when relevant.</div></div><div class="ps-switch"></div></div>
       <div id="npc_send_portraits" class="mtab-toggle-row ${bank.sendPortraitsToAi ? "active" : ""}" data-action="toggle" data-path="npcBank.sendPortraitsToAi"><div class="toggle-info"><div class="toggle-label">${icon("fa-image")} Send Portraits to AI</div><div class="toggle-desc">If an injected NPC has a portrait, send the image to the AI to help it visualize the character.</div></div><div class="ps-switch"></div></div>
@@ -1576,7 +1776,7 @@ function renderNpcCard(npc) {
     ["hiddenLayer", "Hidden Layer", "fa-eye-slash", "#ef4444"]
   ];
   return `
-    <details class="npc-card" style="--npc-accent:${accent};--npc-rgb:${accentRgb};">
+    <details class="npc-card" data-npc-name="${escapeHtml(npc.name || "")}" style="--npc-accent:${accent};--npc-rgb:${accentRgb};">
       <summary class="npc-card-header">
         <span class="npc-title-left">${icon("fa-chevron-right")} ${pfp ? `<img class="npc-mini-pfp" src="${escapeHtml(pfp)}" alt="">` : ""}<strong>${escapeHtml(npc.name || "Unknown NPC")}</strong><small>${escapeHtml(npc.age || "?")} &middot; ${escapeHtml(npc.sex || "?")}</small></span>
         <span class="npc-title-right"><small>${escapeHtml(date)}</small><button class="icon-btn danger" type="button" data-action="npc-remove" data-name="${escapeHtml(npc.name)}">${icon("fa-trash")}</button></span>
@@ -1585,7 +1785,7 @@ function renderNpcCard(npc) {
         <div class="npc-pfp-column">
           <div class="npc-pfp-container">${pfp ? `<img src="${escapeHtml(pfp)}" alt="">` : `<span>${icon("fa-user-secret")}</span>`}</div>
           <div class="npc-pfp-name">${escapeHtml(npc.name || "Unknown NPC")}</div>
-          <button class="npc-pfp-btn upload" type="button">${icon("fa-upload")} Upload</button>
+          <button class="npc-pfp-btn upload" type="button" data-action="npc-upload" data-name="${escapeHtml(npc.name)}">${icon("fa-upload")} Upload</button>
           <button class="npc-pfp-btn generate" type="button" data-action="npc-portrait" data-name="${escapeHtml(npc.name)}">${icon("fa-wand-magic-sparkles")} Generate</button>
         </div>
         <div class="npc-fields">
@@ -1602,6 +1802,7 @@ function renderMemory() {
   const vaultPct = clamp(mem.longTermVault.length / totalUnits * 100, 5, 70);
   return `
     ${tabHeader("Memory Core", "3-Tier Context Management: Working, Short-Term, and Long-Term Vector DB.", "fa-memory", "#10b981", mem.enabled ? "Enabled" : "Disabled", mem.enabled ? "#10b981" : "#a1a1aa", mem.enabled ? "fa-circle-check" : "fa-circle-xmark")}
+    ${presetFeatureWarning(["memory-core"])}
     <div id="mem_enable_card" class="mtab-toggle-row ${mem.enabled ? "active" : ""}" data-action="toggle" data-path="memoryCore.enabled" style="margin-bottom: 20px;"><div class="toggle-info"><div class="toggle-label">${icon("fa-microchip")} Enable Memory Core</div><div class="toggle-desc">Archiving happens silently in the background. Old messages fade in the UI and are replaced in the prompt with injected summaries.</div></div><div class="ps-switch"></div></div>
     <div id="mem_main_content" style="display:${mem.enabled ? "block" : "none"};">
     <div class="mtab-panel" style="margin-bottom:16px;">
@@ -1787,6 +1988,7 @@ function renderStyleEditor() {
   const name = existing?.name || "";
   const notes = existing?.notes || "";
   const rule = existing?.rule || state.profile.aiRule || "";
+  const templateOptions = (state.logic?.styleTemplates || []).map((template, index) => `<option value="${index}">${escapeHtml(template.name || `Template ${index + 1}`)}</option>`).join("");
   return `
     <div class="wstyle-header">
       <div class="wstyle-header-left">
@@ -1800,8 +2002,9 @@ function renderStyleEditor() {
     </div>
     <div class="wstyle-editor-bar">
       <input id="style-name" class="ps-modern-input" value="${escapeHtml(name)}" placeholder="Name your style...">
-      <button class="ps-modern-btn secondary" type="button">${icon("fa-wand-magic-sparkles")} Load Template</button>
-      <button class="ps-modern-btn secondary" type="button">${icon("fa-lightbulb")} Generate Insights</button>
+      <select id="style-template-select" class="ps-modern-input"><option value="" disabled selected>Load a Pre-configured Template...</option>${templateOptions}</select>
+      <button class="ps-modern-btn secondary" type="button" data-action="style-load-template">${icon("fa-wand-magic-sparkles")} Load Template</button>
+      <button class="ps-modern-btn secondary" type="button" data-action="style-insights">${icon("fa-lightbulb")} Generate Insights</button>
     </div>
     <div class="wstyle-insights-panel">
       <div class="mtab-panel-title purple">${icon("fa-sparkles")} Style Notes / Insights</div>
@@ -1810,7 +2013,7 @@ function renderStyleEditor() {
     <div class="wstyle-rule-panel">
       <div class="panel-heading-row">
         <div class="mtab-panel-title purple">${icon("fa-scroll")} Generated Rule</div>
-        <button class="wstyle-gen-btn" type="button">${icon("fa-bolt")} Generate Writing Rule</button>
+        <button class="wstyle-gen-btn" type="button" data-action="style-generate-rule">${icon("fa-bolt")} Generate Writing Rule</button>
       </div>
       <textarea id="style-rule" class="ps-modern-input textarea-xl" placeholder="Select tags above and click Generate...">${escapeHtml(rule)}</textarea>
       <div class="wstyle-info-callout">${icon("fa-circle-info")}<span>After generating or editing your rule, hit <strong>Save</strong> in the toolbar above to apply it to your library.</span></div>
@@ -1945,6 +2148,15 @@ function sliderPair(id, label, path, value, min, max, step) {
 function settingText(label, desc) {
   return `<span class="set-info"><span class="set-label">${escapeHtml(label)}</span><span class="set-desc">${escapeHtml(desc)}</span></span>`;
 }
+function presetFeatureWarning(featureIds) {
+  const features = state.presetAudit?.features || [];
+  if (!features.length)
+    return "";
+  const missing = features.filter((feature) => featureIds.includes(feature.id) && feature.missing.length > 0).flatMap((feature) => feature.missing.map((placeholder) => `${feature.label}: ${placeholder}`));
+  if (!missing.length)
+    return "";
+  return `<div class="mtab-callout gold preset-warning">${icon("fa-triangle-exclamation")} <span><strong>Preset hook missing:</strong> ${escapeHtml(missing.join(", "))}</span></div>`;
+}
 function lockedState(iconName, title, text) {
   return `<div class="mtab-locked-state">${icon(iconName)}<h3>${escapeHtml(title)}</h3><p>${escapeHtml(text)}</p></div>`;
 }
@@ -1968,7 +2180,7 @@ function styleCardWithActions(title, desc, rule, active, value) {
     </button>
     <div class="card-actions">
       <button type="button" class="ps-btn-edit" data-action="style-edit" data-value="${escapeHtml(value)}">${icon("fa-pen")} Edit</button>
-      <button type="button" class="act-regen ps-btn-regen">${icon("fa-rotate-right")} Redo</button>
+      <button type="button" class="act-regen ps-btn-regen" data-action="style-regenerate" data-value="${escapeHtml(value)}">${icon("fa-rotate-right")} Redo</button>
       <button type="button" class="act-delete ps-btn-delete" data-action="style-delete" data-value="${escapeHtml(value)}">${icon("fa-trash-can")} Delete</button>
     </div>
   </div>`;
@@ -2106,6 +2318,27 @@ function estimatePayloadTokens() {
     memory: [...state.profile.memoryCore.shortTermChunks, ...state.profile.memoryCore.longTermVault].slice(-8)
   });
   return Math.max(0, Math.ceil(profileText.length / 4));
+}
+function payloadTokenCount() {
+  const audited = Number(state.presetAudit?.payloadEstimateTokens);
+  return Number.isFinite(audited) && audited >= 0 ? audited : estimatePayloadTokens();
+}
+function payloadTokenTitle() {
+  if (state.presetAudit?.payloadEstimateSource === "preset-audit") {
+    const presetNames = state.presetAudit.scannedPresetNames?.length ? ` (${state.presetAudit.scannedPresetNames.join(", ")})` : "";
+    return `Estimated Payload Tokens from uploaded Megumin preset hooks${presetNames}`;
+  }
+  return "Estimated Payload Tokens (fallback until uploaded preset hooks are detected)";
+}
+function updateDnrUi(container, dialogue) {
+  const d = clamp(dialogue, 0, 100);
+  const n = 100 - d;
+  container.querySelectorAll("#lbl_dial, #lbl_prev_d").forEach((item) => {
+    item.textContent = String(d);
+  });
+  container.querySelectorAll("#lbl_narr, #lbl_prev_n").forEach((item) => {
+    item.textContent = String(n);
+  });
 }
 function getPath(target, path) {
   return path.split(".").reduce((value, key) => value?.[key], target);
@@ -2596,26 +2829,34 @@ pre { white-space:pre-wrap; color:#d4d4d8; margin:0; padding:12px; border-top:1p
 .off-left small { display:block; color:var(--text-muted); font-size:.75rem; margin-top:2px; }
 .off-icon { width:36px; height:36px; border-radius:10px; display:grid; place-items:center; background:rgba(161,161,170,.12); color:#a1a1aa; }
 .off-icon.blue { background:rgba(59,130,246,.18); color:#3b82f6; }
+.wstyle-dnr-panel { margin-bottom:14px; transition:border-color .25s ease, box-shadow .25s ease, background .25s ease; }
+.wstyle-dnr-panel:has(.wstyle-dnr-body.open) { border-color:rgba(245,158,11,.35); box-shadow:0 0 24px rgba(245,158,11,.08); background:linear-gradient(180deg,rgba(245,158,11,.035),#18191f 62%); }
 .wstyle-dnr-header { display:flex; justify-content:space-between; align-items:center; gap:12px; cursor:pointer; }
 .dnr-info { display:flex; align-items:center; gap:12px; }
 .dnr-info strong { display:block; font-size:.9rem; }
 .dnr-info small { display:block; color:var(--text-muted); font-size:.73rem; margin-top:2px; }
 .dnr-icon { width:34px; height:34px; border-radius:10px; display:grid; place-items:center; background:rgba(245,158,11,.13); color:var(--gold); }
 .ps-toggle-card { border:1px solid var(--border-color); border-radius:10px; background:transparent; padding:8px; min-width:56px; display:flex; justify-content:center; cursor:pointer; }
-.wstyle-dnr-body { display:none; padding-top:15px; margin-top:12px; border-top:1px dashed var(--border-color); }
-.wstyle-dnr-body.open { display:block; }
+.ps-toggle-card.active { border-color:rgba(245,158,11,.45); }
+.ps-toggle-card.active .ps-switch { background:#f59e0b; }
+.ps-toggle-card.active .ps-switch::after { left:18px; background:#111; }
+.wstyle-dnr-body { max-height:0; overflow:hidden; opacity:0; padding-top:0; margin-top:0; border-top:1px dashed transparent; transition:max-height .28s ease, opacity .2s ease, padding-top .28s ease, margin-top .28s ease, border-color .28s ease; }
+.wstyle-dnr-body.open { max-height:110px; opacity:1; padding-top:15px; margin-top:12px; border-top-color:var(--border-color); }
 .wstyle-dnr-slider-track { display:flex; align-items:center; gap:12px; }
-.wstyle-dnr-slider-track input { flex:1; }
+.wstyle-dnr-slider-track input { flex:1; accent-color:var(--gold); }
+.wstyle-dnr-slider-track input[type="range"]::-webkit-slider-thumb { cursor:pointer; box-shadow:0 0 0 4px rgba(245,158,11,.13); }
+.wstyle-dnr-slider-track input[type="range"]::-moz-range-thumb { cursor:pointer; box-shadow:0 0 0 4px rgba(245,158,11,.13); }
 .wstyle-dnr-label { color:var(--text-muted); font-size:.72rem; white-space:nowrap; }
 .wstyle-dnr-label.dial { color:#3b82f6; }
 .wstyle-dnr-label.narr { color:var(--gold); }
 .dnr-preview { font-size:.7rem; color:var(--text-muted); text-align:center; margin-top:10px; font-family:ui-monospace,Consolas,monospace; opacity:.78; }
+.preset-warning { margin:0 0 14px; }
 .wstyle-gen-card, .wstyle-create-card { display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid var(--border-color); border-radius:14px; background:var(--bg-main); padding:16px 18px; color:var(--text-main); cursor:pointer; text-align:left; }
 .wstyle-create-card { justify-content:center; border-style:dashed; color:#10b981; font-weight:800; }
 .gen-info { display:flex; flex-direction:column; gap:3px; }
 .gen-title { font-weight:800; }
 .gen-desc { color:var(--text-muted); font-size:.76rem; line-height:1.35; }
-.wstyle-editor-bar { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:10px; margin-bottom:12px; }
+.wstyle-editor-bar { display:grid; grid-template-columns:minmax(0,1fr) minmax(220px,.7fr) auto auto; gap:10px; margin-bottom:12px; }
 .wstyle-info-callout { display:flex; gap:10px; margin-top:12px; color:#c4b5fd; background:rgba(168,85,247,.08); border:1px solid rgba(168,85,247,.18); border-radius:8px; padding:12px; font-size:.78rem; }
 .workflow-row { margin-top:12px; }
 .ig-param-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:15px; background:rgba(0,0,0,.1); padding:15px; border-radius:10px; border:1px solid var(--border-color); }

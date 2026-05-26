@@ -39,9 +39,7 @@ export function hydrateProfile(raw: unknown): MeguminProfile {
 
 function normalizeMacroTargets(text: string, context: ChatContext): string {
   return text
-    .replace(/\{\{char\}\}/gi, context.characterName || "the character")
     .replace(/<BOT>/g, context.characterName || "the character")
-    .replace(/\{\{user\}\}/gi, "the user")
     .replace(/<USER>/g, "the user");
 }
 
@@ -108,6 +106,21 @@ const UNUSED_PLACEHOLDERS = [
   "[[npc list]]"
 ];
 
+export const REQUIRED_PLACEHOLDER_FEATURES = [
+  { id: "core-engines", label: "Core Engines", placeholders: ["[[prompt1]]", "[[prompt2]]", "[[prompt3]]", "[[prompt4]]", "[[prompt5]]", "[[prompt6]]", "[prompt1]", "[prompt2]", "[prompt3]", "[prompt4]", "[prompt5]", "[prompt6]", "[[main]]", "[[AI1]]", "[[AI2]]", "[[OOC]]", "[[control]]"] },
+  { id: "writing-style", label: "Writing Style", placeholders: ["[[aiprompt]]"] },
+  { id: "global-settings", label: "Global Settings", placeholders: ["[[Language]]", "[[pronouns]]", "[[count]]"] },
+  { id: "gameplay-addons", label: "Gameplay Add-ons", placeholders: ["[[death]]", "[[combat]]", "[[Direct]]", "[[DN]]", "[[COLOR]]", "[[npc_events]]", "[[onomato]]"] },
+  { id: "response-blocks", label: "Response Blocks", placeholders: ["[[infoblock]]", "[[summary]]", "[[cyoa]]", "[[cyoa2]]", "[[MVU]]", "[[npc_inner_chatter]]", "[[npc_inner_chatter2]]"] },
+  { id: "chain-of-thought", label: "Chain of Thought", placeholders: ["[[COT]]", "[[prefill]]", "[[THINK]]"] },
+  { id: "story-planner", label: "Story Planner", placeholders: ["[[storyplan]]", "[[storytracker]]", "[[storytracker2]]"] },
+  { id: "image-generation", label: "Image Generation", placeholders: ["[[img1]]", "[[img2]]"] },
+  { id: "npc-bank", label: "NPC Bank", placeholders: ["[[npc list]]", "[[npc_dossier]]", "[[npc_dossier2]]"] },
+  { id: "memory-core", label: "Memory Core", placeholders: ["[[long-Memory]]", "[[Short-memory]]"] },
+  { id: "dynamic-ban-list", label: "Dynamic Ban List", placeholders: ["[[banlist]]"] },
+  { id: "dialogue-narration", label: "Dialogue / Narration Ratio", placeholders: ["[[DNRATIO]]"] }
+] as const;
+
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -127,13 +140,14 @@ function buildBaseDict(profile: MeguminProfile, customEngines: EngineMode[], cha
   const isCustom = !logic.modes.some((mode) => mode.id === activeEngine.id);
 
   const targetLang = profile.userLanguage.trim() ? profile.userLanguage.trim().toUpperCase() : "ENGLISH";
-  dict.Language = `[LANGUAGE RULE]\nAll output except private thinking must be in ${targetLang} only.`;
+  dict.Language = `[LANGUAGE RULE]\nALL OUTPUT EXCEPT THINKING MUST BE IN ${targetLang} ONLY.`;
   dict.pronouns = profile.userPronouns === "male"
-    ? "The user character is male. Portray and address him as such."
+    ? "{{user}} is male. Always portray and address him as such."
     : profile.userPronouns === "female"
-      ? "The user character is female. Portray and address her as such."
+      ? "{{user}} is female. Always portray and address her as such."
       : "";
-  dict.count = profile.userWordCount.trim() ? `maximum ${profile.userWordCount.trim()} words` : "";
+  const wordCountStr = profile.userWordCount.trim() || "";
+  dict.count = wordCountStr ? `— maximum ${wordCountStr} words` : "";
 
   const personality = logic.personalities.find((item) => item.id === profile.personality);
   dict.main = personality?.content || "";
@@ -185,14 +199,14 @@ function buildBaseDict(profile: MeguminProfile, customEngines: EngineMode[], cha
   }
 
   dict.DNRATIO = profile.dnRatio.enabled
-    ? `Ratio: maintain a balance of ${profile.dnRatio.dialogue}% dialogue and ${100 - profile.dnRatio.dialogue}% narration.`
+    ? `- Ratio: Maintain a balance of ${profile.dnRatio.dialogue}% Dialogue and ${100 - profile.dnRatio.dialogue}% Narration.`
     : "";
   dict.onomato = profile.onomatopoeia.enabled
-    ? `Narration must use precise, context-specific onomatopoeia.${profile.onomatopoeia.useStyling ? " Style sound words with tasteful HTML/CSS when appropriate." : ""}`
+    ? `- Narration must utilize onomatopoeia. Use precise, context-specific phonetic representations for physical interactions (e.g., the click of a latch, the thud of a heavy object, the soughing of wind) rather than abstract descriptions of sound.${profile.onomatopoeia.useStyling ? "\nAll onomatopoeic words must animated and colored using HTML and CSS. The selected style tag and color must objectively correspond to the physical nature or movement of the sound produced; for example, a repetitive friction sound such as \"shush-shush\" must utilize a sliding animation tag to represent the physical action." : ""}`
     : "";
   dict.MVU = profile.blocks.includes("mvu")
-    ? (getContent(logic.blocks, "mvu") || "{main response}").replace("[[count]]", dict.count || "...")
-    : (dict.count ? `{main response - ${dict.count}}` : "{main response}");
+    ? (getContent(logic.blocks, "mvu") || "{main response}").replace("[[count]]", wordCountStr ? `maximum ${wordCountStr} words` : "...")
+    : (wordCountStr ? `{main response — maximum ${wordCountStr} words}` : "{main response}");
 
   const overrides = [
     ["cot", "COT", true],
@@ -207,12 +221,29 @@ function buildBaseDict(profile: MeguminProfile, customEngines: EngineMode[], cha
     ["direct", "Direct", profile.addons.includes("direct")],
     ["dn", "DN", profile.addons.includes("dn")],
     ["dialogueColor", "COLOR", profile.addons.includes("color")],
-    ["npc_inner_chatter", "npc_inner_chatter", profile.blocks.includes("npc_inner_chatter") || profile.blocks.includes("npc_inner_chatter_v2")]
+    ["npc_inner_chatter", "npc_inner_chatter", profile.blocks.includes("npc_inner_chatter") || profile.blocks.includes("npc_inner_chatter_v2")],
+    ["storytracker", "storytracker", profile.storyPlan.enabled],
+    ["language", "Language", true],
+    ["pronouns", "pronouns", true],
+    ["count", "count", true],
+    ["dnratio", "DNRATIO", profile.dnRatio.enabled],
+    ["onomato", "onomato", profile.onomatopoeia.enabled],
+    ["banlist", "banlist", true]
   ] as const;
 
   for (const [source, target, condition] of overrides) {
     const value = activeEngine[source];
     if (condition && typeof value === "string" && value.trim()) dict[target] = value;
+  }
+
+  if (Array.isArray(activeEngine.customToggles)) {
+    for (const customToggle of activeEngine.customToggles as Array<{ id?: string; attachPoint?: string; content?: string }>) {
+      if (!customToggle?.id || !profile.toggles[customToggle.id]) continue;
+      const targetKey = `prompt${String(customToggle.attachPoint || "").replace("p", "")}`;
+      if (dict[targetKey] !== undefined && customToggle.content) {
+        dict[targetKey] = `${dict[targetKey]}\n\n${customToggle.content}`.trim();
+      }
+    }
   }
 
   if (activeEngine.id.startsWith("v7")) {
@@ -224,16 +255,21 @@ function buildBaseDict(profile: MeguminProfile, customEngines: EngineMode[], cha
   }
 
   if (profile.storyPlan.enabled && profile.storyPlan.currentPlan.trim()) {
-    dict.storyplan = `<Story_Plan>\n${profile.storyPlan.currentPlan.trim()}\n</Story_Plan>`;
-    dict.storytracker = "<Story_Tracker>\narc: active arc.\nchapter: active chapter.\nEpisode: active episode.\nSecrets: secrets the user character does not know.\n</Story_Tracker>";
+    dict.storyplan = `<Story_Plan>\nThis is a possible event for the story, take from it:\n${profile.storyPlan.currentPlan.trim()}\n</Story_Plan>`;
+    dict.storytracker = "<Story_Tracker>\narc: The Arc that is now active.\nchapter: The chapter that is now active.\nEpisode: The episode that is now active.\nSecrets: Any secret that the user/{{user}} doesn't know.\n</Story_Tracker>";
   } else {
     dict.storyplan = "";
     dict.storytracker = "";
   }
 
   dict.banlist = profile.banList.length > 0
-    ? `[BAN LIST]\nNever rely on these cliches, tropes, or repetitive patterns:\n${profile.banList.map((item) => `- ${item}`).join("\n")}`
+    ? `[BAN LIST]\nNever rely on these clichés, tropes, or repetitive patterns. They are dead language:\n${profile.banList.map((item) => `- ${item}`).join("\n")}`
     : "";
+
+  for (const [source, target, condition] of overrides) {
+    const value = activeEngine[source];
+    if (condition && typeof value === "string" && value.trim()) dict[target] = value;
+  }
 
   const aiMessageCount = chatMessages.filter((msg) => msg.role === "assistant").length;
   const imageMode = profile.imageGen.triggerMode || "manual";
@@ -319,9 +355,40 @@ function placeholderMapFromDict(dict: Record<string, string>): Record<string, st
   return map;
 }
 
-function replacePlaceholderText(content: string, replacements: Record<string, string>): { content: string; replacementsMade: number } {
+export function buildMeguminReplacementMap(
+  rawProfile: unknown,
+  customEngines: EngineMode[],
+  chatMessages: ChatMessage[],
+  context: ChatContext
+): Record<string, string> {
+  const profile = hydrateProfile(rawProfile || DEFAULT_PROFILE);
+  return placeholderMapFromDict(buildBaseDict(profile, customEngines, chatMessages, context));
+}
+
+export function estimateMeguminPayloadTokens(
+  rawProfile: unknown,
+  customEngines: EngineMode[],
+  chatMessages: ChatMessage[],
+  context: ChatContext,
+  presentPlaceholders?: Set<string>
+): number {
+  const replacements = buildMeguminReplacementMap(rawProfile, customEngines, chatMessages, context);
+  const counted = new Set<string>();
+  let chars = 0;
+  for (const [placeholder, value] of Object.entries(replacements)) {
+    if (presentPlaceholders && !presentPlaceholders.has(placeholder)) continue;
+    const text = String(value || "").trim();
+    if (!text || counted.has(text)) continue;
+    counted.add(text);
+    chars += text.replace(/\s+/g, " ").length;
+  }
+  return Math.max(0, Math.ceil(chars / 4));
+}
+
+function replacePlaceholderText(content: string, replacements: Record<string, string>): { content: string; replacementsMade: number; changed: boolean } {
   let next = content;
   let replacementsMade = 0;
+  let changed = false;
 
   for (const [placeholder, replacement] of Object.entries(replacements)) {
     if (!next.includes(placeholder)) continue;
@@ -331,15 +398,19 @@ function replacePlaceholderText(content: string, replacements: Record<string, st
     }
     next = next.replace(new RegExp(escapeRegex(placeholder), "g"), processed);
     replacementsMade += 1;
+    changed = true;
   }
 
   for (const placeholder of UNUSED_PLACEHOLDERS) {
     if (!next.includes(placeholder)) continue;
     next = next.replace(new RegExp(`^[ \\t]*${escapeRegex(placeholder)}[ \\t]*\\r?\\n?`, "gm"), "");
     next = next.replace(new RegExp(escapeRegex(placeholder), "g"), "");
+    replacementsMade += 1;
+    changed = true;
   }
 
-  return { content: cleanEmptyLines(next), replacementsMade };
+  const cleaned = cleanEmptyLines(next);
+  return { content: cleaned, replacementsMade, changed: changed || cleaned !== content };
 }
 
 export function replaceMeguminPlaceholders(
@@ -348,25 +419,34 @@ export function replaceMeguminPlaceholders(
   customEngines: EngineMode[],
   chatMessages: ChatMessage[],
   context: ChatContext
-): { messages: LlmMessage[]; replacementsMade: number } {
+): { messages: LlmMessage[]; replacementsMade: number; changedMessages: Array<{ messageIndex: number; replacementsMade: number }> } {
   const profile = hydrateProfile(rawProfile || DEFAULT_PROFILE);
   const replacements = placeholderMapFromDict(buildBaseDict(profile, customEngines, chatMessages, context));
   let replacementsMade = 0;
-  const messages = incoming.map((message) => {
+  const changedMessages: Array<{ messageIndex: number; replacementsMade: number }> = [];
+  const messages = incoming.map((message, messageIndex) => {
+    let messageReplacements = 0;
+    let messageChanged = false;
     if (typeof message.content === "string") {
       const replaced = replacePlaceholderText(message.content, replacements);
       replacementsMade += replaced.replacementsMade;
+      messageReplacements += replaced.replacementsMade;
+      messageChanged = replaced.changed;
+      if (messageChanged) changedMessages.push({ messageIndex, replacementsMade: messageReplacements });
       return { ...message, content: replaced.content };
     }
     const content = message.content.map((part) => {
       if (part.type !== "text") return part;
       const replaced = replacePlaceholderText(part.text, replacements);
       replacementsMade += replaced.replacementsMade;
+      messageReplacements += replaced.replacementsMade;
+      if (replaced.changed) messageChanged = true;
       return { ...part, text: replaced.content };
     });
+    if (messageChanged) changedMessages.push({ messageIndex, replacementsMade: messageReplacements });
     return { ...message, content };
   });
-  return { messages, replacementsMade };
+  return { messages, replacementsMade, changedMessages };
 }
 
 function buildMemoryInjection(profile: MeguminProfile, chatMessages: ChatMessage[]): { longMemory: string; shortMemory: string } {
@@ -467,16 +547,32 @@ export function buildPromptMessages(
     profile
   );
   const replaced = replaceMeguminPlaceholders(prunedMessages, profile, customEngines, chatMessages, context);
-  const resultMessages = replaced.messages.filter((msg) => {
-    if (typeof msg.content === "string") return msg.content.trim().length > 0;
-    return msg.content.length > 0;
+  const indexedMessages = replaced.messages.map((message, originalIndex) => ({ message, originalIndex })).filter((entry) => {
+    if (typeof entry.message.content === "string") return entry.message.content.trim().length > 0;
+    return entry.message.content.length > 0;
   });
+  const resultMessages = indexedMessages.map((entry) => entry.message);
+  const indexMap = new Map<number, number>();
+  indexedMessages.forEach((entry, resultIndex) => indexMap.set(entry.originalIndex, resultIndex));
 
-  const breakdown = replaced.replacementsMade > 0
-    ? [{ messageIndex: 0, name: `Megumin Suite Placeholder Injection (${replaced.replacementsMade})` }]
-    : [];
+  const breakdown = replaced.changedMessages
+    .map((entry) => {
+      const messageIndex = indexMap.get(entry.messageIndex);
+      return messageIndex === undefined ? null : {
+        messageIndex,
+        name: `Megumin Suite Placeholder Injection (${entry.replacementsMade})`
+      };
+    })
+    .filter((entry): entry is { messageIndex: number; name: string } => !!entry);
 
-  return { messages: resultMessages, breakdown, prunedCount };
+  return {
+    messages: resultMessages,
+    breakdown,
+    prunedCount,
+    replacementsMade: replaced.replacementsMade,
+    changedMessages: breakdown.map((entry) => ({ messageIndex: entry.messageIndex, replacementsMade: Number(entry.name.match(/\((\d+)\)/)?.[1] || 0) })),
+    estimatedInjectionTokens: estimateMeguminPayloadTokens(profile, customEngines, chatMessages, context)
+  };
 }
 
 export function isMessageArchived(index: number, profile: MeguminProfile): boolean {

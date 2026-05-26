@@ -3000,7 +3000,7 @@ function hydrateProfile(raw) {
   return mergeProfile(raw);
 }
 function normalizeMacroTargets(text, context) {
-  return text.replace(/\{\{char\}\}/gi, context.characterName || "the character").replace(/<BOT>/g, context.characterName || "the character").replace(/\{\{user\}\}/gi, "the user").replace(/<USER>/g, "the user");
+  return text.replace(/<BOT>/g, context.characterName || "the character").replace(/<USER>/g, "the user");
 }
 function cleanEmptyLines(text) {
   return text.replace(/[ \t]+\n/g, `
@@ -3063,6 +3063,20 @@ var UNUSED_PLACEHOLDERS = [
   "[[npc_dossier2]]",
   "[[npc list]]"
 ];
+var REQUIRED_PLACEHOLDER_FEATURES = [
+  { id: "core-engines", label: "Core Engines", placeholders: ["[[prompt1]]", "[[prompt2]]", "[[prompt3]]", "[[prompt4]]", "[[prompt5]]", "[[prompt6]]", "[prompt1]", "[prompt2]", "[prompt3]", "[prompt4]", "[prompt5]", "[prompt6]", "[[main]]", "[[AI1]]", "[[AI2]]", "[[OOC]]", "[[control]]"] },
+  { id: "writing-style", label: "Writing Style", placeholders: ["[[aiprompt]]"] },
+  { id: "global-settings", label: "Global Settings", placeholders: ["[[Language]]", "[[pronouns]]", "[[count]]"] },
+  { id: "gameplay-addons", label: "Gameplay Add-ons", placeholders: ["[[death]]", "[[combat]]", "[[Direct]]", "[[DN]]", "[[COLOR]]", "[[npc_events]]", "[[onomato]]"] },
+  { id: "response-blocks", label: "Response Blocks", placeholders: ["[[infoblock]]", "[[summary]]", "[[cyoa]]", "[[cyoa2]]", "[[MVU]]", "[[npc_inner_chatter]]", "[[npc_inner_chatter2]]"] },
+  { id: "chain-of-thought", label: "Chain of Thought", placeholders: ["[[COT]]", "[[prefill]]", "[[THINK]]"] },
+  { id: "story-planner", label: "Story Planner", placeholders: ["[[storyplan]]", "[[storytracker]]", "[[storytracker2]]"] },
+  { id: "image-generation", label: "Image Generation", placeholders: ["[[img1]]", "[[img2]]"] },
+  { id: "npc-bank", label: "NPC Bank", placeholders: ["[[npc list]]", "[[npc_dossier]]", "[[npc_dossier2]]"] },
+  { id: "memory-core", label: "Memory Core", placeholders: ["[[long-Memory]]", "[[Short-memory]]"] },
+  { id: "dynamic-ban-list", label: "Dynamic Ban List", placeholders: ["[[banlist]]"] },
+  { id: "dialogue-narration", label: "Dialogue / Narration Ratio", placeholders: ["[[DNRATIO]]"] }
+];
 function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -3079,9 +3093,10 @@ function buildBaseDict(profile, customEngines, chatMessages, context) {
   const isCustom = !logic.modes.some((mode) => mode.id === activeEngine.id);
   const targetLang = profile.userLanguage.trim() ? profile.userLanguage.trim().toUpperCase() : "ENGLISH";
   dict.Language = `[LANGUAGE RULE]
-All output except private thinking must be in ${targetLang} only.`;
-  dict.pronouns = profile.userPronouns === "male" ? "The user character is male. Portray and address him as such." : profile.userPronouns === "female" ? "The user character is female. Portray and address her as such." : "";
-  dict.count = profile.userWordCount.trim() ? `maximum ${profile.userWordCount.trim()} words` : "";
+ALL OUTPUT EXCEPT THINKING MUST BE IN ${targetLang} ONLY.`;
+  dict.pronouns = profile.userPronouns === "male" ? "{{user}} is male. Always portray and address him as such." : profile.userPronouns === "female" ? "{{user}} is female. Always portray and address her as such." : "";
+  const wordCountStr = profile.userWordCount.trim() || "";
+  dict.count = wordCountStr ? `\u2014 maximum ${wordCountStr} words` : "";
   const personality = logic.personalities.find((item) => item.id === profile.personality);
   dict.main = personality?.content || "";
   dict.AI1 = profile.personality === "megumin" ? "Fine i read the rules." : "Understood.";
@@ -3132,9 +3147,10 @@ pacing: Unhurried where needed; compact when the moment demands it.
 
 ${dict.COT}`;
   }
-  dict.DNRATIO = profile.dnRatio.enabled ? `Ratio: maintain a balance of ${profile.dnRatio.dialogue}% dialogue and ${100 - profile.dnRatio.dialogue}% narration.` : "";
-  dict.onomato = profile.onomatopoeia.enabled ? `Narration must use precise, context-specific onomatopoeia.${profile.onomatopoeia.useStyling ? " Style sound words with tasteful HTML/CSS when appropriate." : ""}` : "";
-  dict.MVU = profile.blocks.includes("mvu") ? (getContent(logic.blocks, "mvu") || "{main response}").replace("[[count]]", dict.count || "...") : dict.count ? `{main response - ${dict.count}}` : "{main response}";
+  dict.DNRATIO = profile.dnRatio.enabled ? `- Ratio: Maintain a balance of ${profile.dnRatio.dialogue}% Dialogue and ${100 - profile.dnRatio.dialogue}% Narration.` : "";
+  dict.onomato = profile.onomatopoeia.enabled ? `- Narration must utilize onomatopoeia. Use precise, context-specific phonetic representations for physical interactions (e.g., the click of a latch, the thud of a heavy object, the soughing of wind) rather than abstract descriptions of sound.${profile.onomatopoeia.useStyling ? `
+All onomatopoeic words must animated and colored using HTML and CSS. The selected style tag and color must objectively correspond to the physical nature or movement of the sound produced; for example, a repetitive friction sound such as "shush-shush" must utilize a sliding animation tag to represent the physical action.` : ""}` : "";
+  dict.MVU = profile.blocks.includes("mvu") ? (getContent(logic.blocks, "mvu") || "{main response}").replace("[[count]]", wordCountStr ? `maximum ${wordCountStr} words` : "...") : wordCountStr ? `{main response \u2014 maximum ${wordCountStr} words}` : "{main response}";
   const overrides = [
     ["cot", "COT", true],
     ["prefill", "prefill", true],
@@ -3148,12 +3164,31 @@ ${dict.COT}`;
     ["direct", "Direct", profile.addons.includes("direct")],
     ["dn", "DN", profile.addons.includes("dn")],
     ["dialogueColor", "COLOR", profile.addons.includes("color")],
-    ["npc_inner_chatter", "npc_inner_chatter", profile.blocks.includes("npc_inner_chatter") || profile.blocks.includes("npc_inner_chatter_v2")]
+    ["npc_inner_chatter", "npc_inner_chatter", profile.blocks.includes("npc_inner_chatter") || profile.blocks.includes("npc_inner_chatter_v2")],
+    ["storytracker", "storytracker", profile.storyPlan.enabled],
+    ["language", "Language", true],
+    ["pronouns", "pronouns", true],
+    ["count", "count", true],
+    ["dnratio", "DNRATIO", profile.dnRatio.enabled],
+    ["onomato", "onomato", profile.onomatopoeia.enabled],
+    ["banlist", "banlist", true]
   ];
   for (const [source, target, condition] of overrides) {
     const value = activeEngine[source];
     if (condition && typeof value === "string" && value.trim())
       dict[target] = value;
+  }
+  if (Array.isArray(activeEngine.customToggles)) {
+    for (const customToggle of activeEngine.customToggles) {
+      if (!customToggle?.id || !profile.toggles[customToggle.id])
+        continue;
+      const targetKey = `prompt${String(customToggle.attachPoint || "").replace("p", "")}`;
+      if (dict[targetKey] !== undefined && customToggle.content) {
+        dict[targetKey] = `${dict[targetKey]}
+
+${customToggle.content}`.trim();
+      }
+    }
   }
   if (activeEngine.id.startsWith("v7")) {
     if (!profile.toggles.v7_ooc)
@@ -3169,22 +3204,28 @@ ${dict.COT}`;
   }
   if (profile.storyPlan.enabled && profile.storyPlan.currentPlan.trim()) {
     dict.storyplan = `<Story_Plan>
+This is a possible event for the story, take from it:
 ${profile.storyPlan.currentPlan.trim()}
 </Story_Plan>`;
     dict.storytracker = `<Story_Tracker>
-arc: active arc.
-chapter: active chapter.
-Episode: active episode.
-Secrets: secrets the user character does not know.
+arc: The Arc that is now active.
+chapter: The chapter that is now active.
+Episode: The episode that is now active.
+Secrets: Any secret that the user/{{user}} doesn't know.
 </Story_Tracker>`;
   } else {
     dict.storyplan = "";
     dict.storytracker = "";
   }
   dict.banlist = profile.banList.length > 0 ? `[BAN LIST]
-Never rely on these cliches, tropes, or repetitive patterns:
+Never rely on these clich\xE9s, tropes, or repetitive patterns. They are dead language:
 ${profile.banList.map((item) => `- ${item}`).join(`
 `)}` : "";
+  for (const [source, target, condition] of overrides) {
+    const value = activeEngine[source];
+    if (condition && typeof value === "string" && value.trim())
+      dict[target] = value;
+  }
   const aiMessageCount = chatMessages.filter((msg) => msg.role === "assistant").length;
   const imageMode = profile.imageGen.triggerMode || "manual";
   const shouldInjectImage = profile.imageGen.enabled && (imageMode === "always" || imageMode === "frequency" && (aiMessageCount + 1) % Math.max(1, profile.imageGen.autoGenFreq || 1) === 0 || imageMode === "conditional");
@@ -3253,9 +3294,29 @@ function placeholderMapFromDict(dict) {
   set("[[npc_dossier2]]", dict.npcDossierSlot);
   return map;
 }
+function buildMeguminReplacementMap(rawProfile, customEngines, chatMessages, context) {
+  const profile = hydrateProfile(rawProfile || DEFAULT_PROFILE);
+  return placeholderMapFromDict(buildBaseDict(profile, customEngines, chatMessages, context));
+}
+function estimateMeguminPayloadTokens(rawProfile, customEngines, chatMessages, context, presentPlaceholders) {
+  const replacements = buildMeguminReplacementMap(rawProfile, customEngines, chatMessages, context);
+  const counted = new Set;
+  let chars = 0;
+  for (const [placeholder, value] of Object.entries(replacements)) {
+    if (presentPlaceholders && !presentPlaceholders.has(placeholder))
+      continue;
+    const text = String(value || "").trim();
+    if (!text || counted.has(text))
+      continue;
+    counted.add(text);
+    chars += text.replace(/\s+/g, " ").length;
+  }
+  return Math.max(0, Math.ceil(chars / 4));
+}
 function replacePlaceholderText(content, replacements) {
   let next = content;
   let replacementsMade = 0;
+  let changed = false;
   for (const [placeholder, replacement] of Object.entries(replacements)) {
     if (!next.includes(placeholder))
       continue;
@@ -3265,23 +3326,34 @@ function replacePlaceholderText(content, replacements) {
     }
     next = next.replace(new RegExp(escapeRegex(placeholder), "g"), processed);
     replacementsMade += 1;
+    changed = true;
   }
   for (const placeholder of UNUSED_PLACEHOLDERS) {
     if (!next.includes(placeholder))
       continue;
     next = next.replace(new RegExp(`^[ \\t]*${escapeRegex(placeholder)}[ \\t]*\\r?\\n?`, "gm"), "");
     next = next.replace(new RegExp(escapeRegex(placeholder), "g"), "");
+    replacementsMade += 1;
+    changed = true;
   }
-  return { content: cleanEmptyLines(next), replacementsMade };
+  const cleaned = cleanEmptyLines(next);
+  return { content: cleaned, replacementsMade, changed: changed || cleaned !== content };
 }
 function replaceMeguminPlaceholders(incoming, rawProfile, customEngines, chatMessages, context) {
   const profile = hydrateProfile(rawProfile || DEFAULT_PROFILE);
   const replacements = placeholderMapFromDict(buildBaseDict(profile, customEngines, chatMessages, context));
   let replacementsMade = 0;
-  const messages = incoming.map((message) => {
+  const changedMessages = [];
+  const messages = incoming.map((message, messageIndex) => {
+    let messageReplacements = 0;
+    let messageChanged = false;
     if (typeof message.content === "string") {
       const replaced = replacePlaceholderText(message.content, replacements);
       replacementsMade += replaced.replacementsMade;
+      messageReplacements += replaced.replacementsMade;
+      messageChanged = replaced.changed;
+      if (messageChanged)
+        changedMessages.push({ messageIndex, replacementsMade: messageReplacements });
       return { ...message, content: replaced.content };
     }
     const content = message.content.map((part) => {
@@ -3289,11 +3361,16 @@ function replaceMeguminPlaceholders(incoming, rawProfile, customEngines, chatMes
         return part;
       const replaced = replacePlaceholderText(part.text, replacements);
       replacementsMade += replaced.replacementsMade;
+      messageReplacements += replaced.replacementsMade;
+      if (replaced.changed)
+        messageChanged = true;
       return { ...part, text: replaced.content };
     });
+    if (messageChanged)
+      changedMessages.push({ messageIndex, replacementsMade: messageReplacements });
     return { ...message, content };
   });
-  return { messages, replacementsMade };
+  return { messages, replacementsMade, changedMessages };
 }
 function buildMemoryInjection(profile, chatMessages) {
   const mem = profile.memoryCore;
@@ -3401,13 +3478,29 @@ function buildPromptMessages(incoming, chatMessages, rawProfile, customEngines, 
   const profile = hydrateProfile(rawProfile || DEFAULT_PROFILE);
   const { messages: prunedMessages, prunedCount } = pruneArchivedPromptMessages(incoming.map((msg) => ({ ...msg, content: Array.isArray(msg.content) ? clone(msg.content) : msg.content })), chatMessages, profile);
   const replaced = replaceMeguminPlaceholders(prunedMessages, profile, customEngines, chatMessages, context);
-  const resultMessages = replaced.messages.filter((msg) => {
-    if (typeof msg.content === "string")
-      return msg.content.trim().length > 0;
-    return msg.content.length > 0;
+  const indexedMessages = replaced.messages.map((message, originalIndex) => ({ message, originalIndex })).filter((entry) => {
+    if (typeof entry.message.content === "string")
+      return entry.message.content.trim().length > 0;
+    return entry.message.content.length > 0;
   });
-  const breakdown = replaced.replacementsMade > 0 ? [{ messageIndex: 0, name: `Megumin Suite Placeholder Injection (${replaced.replacementsMade})` }] : [];
-  return { messages: resultMessages, breakdown, prunedCount };
+  const resultMessages = indexedMessages.map((entry) => entry.message);
+  const indexMap = new Map;
+  indexedMessages.forEach((entry, resultIndex) => indexMap.set(entry.originalIndex, resultIndex));
+  const breakdown = replaced.changedMessages.map((entry) => {
+    const messageIndex = indexMap.get(entry.messageIndex);
+    return messageIndex === undefined ? null : {
+      messageIndex,
+      name: `Megumin Suite Placeholder Injection (${entry.replacementsMade})`
+    };
+  }).filter((entry) => !!entry);
+  return {
+    messages: resultMessages,
+    breakdown,
+    prunedCount,
+    replacementsMade: replaced.replacementsMade,
+    changedMessages: breakdown.map((entry) => ({ messageIndex: entry.messageIndex, replacementsMade: Number(entry.name.match(/\((\d+)\)/)?.[1] || 0) })),
+    estimatedInjectionTokens: estimateMeguminPayloadTokens(profile, customEngines, chatMessages, context)
+  };
 }
 
 // src/image-workflow.ts
@@ -3571,6 +3664,77 @@ async function presetBridgeStatus(userId) {
       !suiteDs4 ? MEGUMIN_PRESET_TARGETS["suite-ds4"].name : "",
       !suiteGemini ? MEGUMIN_PRESET_TARGETS["suite-gemini"].name : ""
     ].filter(Boolean)
+  };
+}
+function presetBlockText(block) {
+  const parts = [
+    block?.content,
+    block?.prompt,
+    block?.text,
+    block?.name,
+    ...Array.isArray(block?.injectionTrigger) ? block.injectionTrigger : []
+  ];
+  return parts.filter((part) => typeof part === "string" && part.trim()).join(`
+`);
+}
+async function presetContractAudit(profile, customEngines, chatMessages, context, userId) {
+  const available = await hasPresetAccess();
+  const presentPlaceholders = new Set;
+  const scannedPresetIds = [];
+  const scannedPresetNames = [];
+  if (available) {
+    const presets = await Promise.all([
+      findMeguminPreset("suite-ds4", userId).catch(() => null),
+      findMeguminPreset("suite-gemini", userId).catch(() => null)
+    ]);
+    for (const preset of presets) {
+      if (!preset?.id || scannedPresetIds.includes(preset.id))
+        continue;
+      scannedPresetIds.push(preset.id);
+      scannedPresetNames.push(preset.name || preset.id);
+      let searchableText = presetBlockText(preset);
+      try {
+        const blocks = await spindle.presets.blocks.list(preset.id, userId);
+        searchableText += `
+` + (blocks || []).filter((block) => block?.enabled !== false).map(presetBlockText).join(`
+`);
+      } catch (err) {
+        spindle.log.warn(`Megumin preset block audit failed for ${preset.name || preset.id}: ${String(err)}`);
+      }
+      for (const feature of REQUIRED_PLACEHOLDER_FEATURES) {
+        for (const placeholder of feature.placeholders) {
+          if (searchableText.includes(placeholder))
+            presentPlaceholders.add(placeholder);
+        }
+      }
+    }
+  }
+  const features = REQUIRED_PLACEHOLDER_FEATURES.map((feature) => {
+    const placeholders = [...feature.placeholders];
+    const present = placeholders.filter((placeholder) => presentPlaceholders.has(placeholder));
+    const missing = placeholders.filter((placeholder) => !presentPlaceholders.has(placeholder));
+    return {
+      id: feature.id,
+      label: feature.label,
+      placeholders,
+      present,
+      missing,
+      connected: missing.length === 0
+    };
+  });
+  const hasScannedPreset = scannedPresetIds.length > 0;
+  const estimateSet = hasScannedPreset ? presentPlaceholders : undefined;
+  return {
+    available,
+    scannedPresetIds,
+    scannedPresetNames,
+    presentPlaceholders: [...presentPlaceholders].sort(),
+    missingPlaceholders: [...new Set(features.flatMap((feature) => feature.missing))].sort(),
+    missingFeatures: features.filter((feature) => !feature.connected).map((feature) => feature.id),
+    features,
+    payloadEstimateTokens: estimateMeguminPayloadTokens(profile, customEngines, chatMessages, context, estimateSet),
+    payloadEstimateSource: hasScannedPreset ? "preset-audit" : "fallback",
+    updatedAt: Date.now()
   };
 }
 async function loadProfile(scope) {
@@ -3915,6 +4079,26 @@ Extra: ${profile.imageGen.promptExtra || "None"}`
     }
   ], { backend: profile.imageGen.generatorBackend, presetKind: "image", userId, trigger: "imagePrompt" });
 }
+async function generateWritingStyleRule(input, userId) {
+  const name = String(input?.name || "Custom AI Style").trim();
+  const notes = String(input?.notes || "").trim();
+  const tags = Array.isArray(input?.tags) ? input.tags.map(String).filter(Boolean) : [];
+  const tagText = tags.length ? tags.join(", ") : "cinematic prose, grounded character behavior, natural pacing";
+  const orderText = `Inspired by ${notes || name}. Write a writing style rule based on: ${tagText}. Direct instructions only. 2-3 paragraphs. No fluff.`;
+  return generateQuiet([
+    { role: "system", content: "You write concise Megumin Suite writing-style directives. Return only the directive text." },
+    { role: "user", content: orderText }
+  ], { backend: "preset", presetKind: "engine", userId, trigger: "dummyOrder" });
+}
+async function generateWritingStyleInsights(input, userId) {
+  const notes = String(input?.notes || "").trim();
+  const name = String(input?.name || "Custom AI Style").trim();
+  return generateQuiet([
+    { role: "system", content: "Suggest concise writing-style inspirations for Megumin Suite. Return 2 author/style influences and 5 short style tags, comma-separated." },
+    { role: "user", content: `Style name: ${name}
+Notes: ${notes || "No notes yet. Suggest grounded cinematic prose options."}` }
+  ], { backend: "preset", presetKind: "engine", userId, trigger: "dummyOrder" });
+}
 async function handlePostGeneration(chatId) {
   const context = await getChatContext(chatId);
   const profile = await loadProfile(context.scope);
@@ -3940,6 +4124,8 @@ async function rpc(payload, userId) {
   switch (payload.type) {
     case "bootstrap": {
       const profile = await loadProfile(context.scope);
+      const customEngines = await getCustomEngines();
+      const chatMessages = await getMessages(context.chatId);
       let imageConnections = [];
       try {
         imageConnections = await spindle.imageGen.listConnections(userId);
@@ -3950,11 +4136,12 @@ async function rpc(payload, userId) {
         context,
         profile,
         logic: getLogic(),
-        engines: allEngines(await getCustomEngines()),
-        customEngines: await getCustomEngines(),
+        engines: allEngines(customEngines),
+        customEngines,
         imageConnections,
         uiAssets: await loadUiAssets(context),
-        presetBridge: await presetBridgeStatus(userId)
+        presetBridge: await presetBridgeStatus(userId),
+        presetAudit: await presetContractAudit(profile, customEngines, chatMessages, context, userId)
       };
     }
     case "profile:save": {
@@ -4048,8 +4235,37 @@ ${npcBuildText(npc)}` }
       npc.pfp = image.imageUrl || "";
       return { profile: await saveProfile(context.scope, profile), image };
     }
+    case "npc:uploadPortrait": {
+      if (!context.chatId)
+        throw new Error("Open a chat before uploading portraits");
+      const name = String(payload.payload?.name || "");
+      const dataUrl = String(payload.payload?.dataUrl || "");
+      const filename = String(payload.payload?.filename || "npc-portrait.png");
+      if (!dataUrl.startsWith("data:image/"))
+        throw new Error("Choose an image file for the NPC portrait");
+      const profile = await loadProfile(context.scope);
+      const npc = profile.npcBank.npcs.find((item) => item.name === name);
+      if (!npc)
+        throw new Error("NPC not found");
+      const uploaded = await spindle.images.uploadFromDataUrl(dataUrl, {
+        originalFilename: filename,
+        owner_chat_id: context.chatId,
+        owner_character_id: context.characterId || undefined
+      });
+      npc.pfpImageId = uploaded?.id;
+      npc.pfpImageUrl = uploaded?.url;
+      npc.pfp = uploaded?.url || "";
+      return { profile: await saveProfile(context.scope, profile), image: uploaded };
+    }
     case "image:connections": {
       return { imageConnections: await spindle.imageGen.listConnections(userId) };
+    }
+    case "image:prompt": {
+      if (!context.chatId)
+        throw new Error("Open a chat before generating an image prompt");
+      const profile = await loadProfile(context.scope);
+      const messages = await getMessages(context.chatId);
+      return { prompt: await generateImagePromptFromChat(profile, messages, userId) };
     }
     case "image:manual": {
       if (!context.chatId)
@@ -4061,6 +4277,17 @@ ${npcBuildText(npc)}` }
       const image = await generateImageForChat(context.scope, context.chatId, prompt, target?.id);
       return { image };
     }
+    case "style:generate": {
+      return { rule: await generateWritingStyleRule(payload.payload, userId) };
+    }
+    case "style:insights": {
+      return { insights: await generateWritingStyleInsights(payload.payload, userId) };
+    }
+    case "prompt:dryRun": {
+      if (!context.chatId)
+        throw new Error("Open a chat before previewing the prompt");
+      return spindle.generate.dryRun({ chatId: context.chatId }, userId);
+    }
     case "preset:resolve": {
       const kind = payload.payload?.kind === "image" ? "image" : "engine";
       const preset = await resolveMeguminPreset(kind, userId);
@@ -4068,6 +4295,12 @@ ${npcBuildText(npc)}` }
     }
     case "preset:status":
       return { presetBridge: await presetBridgeStatus(userId) };
+    case "preset:audit": {
+      const profile = await loadProfile(context.scope);
+      const customEngines = await getCustomEngines();
+      const chatMessages = await getMessages(context.chatId);
+      return { presetAudit: await presetContractAudit(profile, customEngines, chatMessages, context, userId), presetBridge: await presetBridgeStatus(userId) };
+    }
     default:
       throw new Error(`Unknown Megumin RPC: ${payload.type}`);
   }
@@ -4084,6 +4317,14 @@ function messagesContainText(messages, text) {
       return content.some((part) => typeof part?.text === "string" && part.text.includes(text));
     }
     return false;
+  });
+}
+function previewMessageText(messages) {
+  return messages.slice(0, 40).map((message) => {
+    const content = message?.content;
+    const text = typeof content === "string" ? content : Array.isArray(content) ? content.map((part) => part?.text || "").join(`
+`) : "";
+    return { role: String(message?.role || "system"), content: text.slice(0, 12000) };
   });
 }
 spindle.onFrontendMessage(async (payload, userId) => {
@@ -4109,6 +4350,16 @@ spindle.registerInterceptor(async (messages, generationContext) => {
   const customEngines = await getCustomEngines();
   const chatMessages = await getMessages(context.chatId);
   const result = buildPromptMessages(messages, chatMessages, profile, customEngines, context);
+  if (profile.toggles.promptPreview) {
+    spindle.sendToFrontend({
+      type: "prompt:preview",
+      payload: {
+        estimatedInjectionTokens: result.estimatedInjectionTokens,
+        breakdown: result.breakdown,
+        messages: previewMessageText(result.messages)
+      }
+    }, generationContext?.userId);
+  }
   return {
     messages: result.messages,
     breakdown: result.breakdown

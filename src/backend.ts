@@ -1,5 +1,11 @@
 import { DEFAULT_PROFILE, EXTENSION_NAME, clone, mergeProfile } from "./defaults";
-import { buildPromptMessages, getLogic, allEngines } from "./prompt-engine";
+import {
+  REQUIRED_PLACEHOLDER_FEATURES,
+  buildPromptMessages,
+  estimateMeguminPayloadTokens,
+  getLogic,
+  allEngines
+} from "./prompt-engine";
 import type { ChatContext, ChatMessage, EngineMode, MeguminProfile, NpcRecord, RpcEnvelope, RpcResponse } from "./types";
 import { cleanAIOutput, cleanChatText, escapeXmlAttr, extractNpcBlocks, npcBuildText } from "./text";
 import { patchComfyWorkflow } from "./image-workflow";
@@ -157,6 +163,107 @@ async function presetBridgeStatus(userId?: string): Promise<{ available: boolean
       !suiteDs4 ? MEGUMIN_PRESET_TARGETS["suite-ds4"].name : "",
       !suiteGemini ? MEGUMIN_PRESET_TARGETS["suite-gemini"].name : ""
     ].filter(Boolean)
+  };
+}
+
+type PresetContractFeature = {
+  id: string;
+  label: string;
+  placeholders: string[];
+  present: string[];
+  missing: string[];
+  connected: boolean;
+};
+
+type PresetContractAudit = {
+  available: boolean;
+  scannedPresetIds: string[];
+  scannedPresetNames: string[];
+  presentPlaceholders: string[];
+  missingPlaceholders: string[];
+  missingFeatures: string[];
+  features: PresetContractFeature[];
+  payloadEstimateTokens: number;
+  payloadEstimateSource: "preset-audit" | "fallback";
+  updatedAt: number;
+};
+
+function presetBlockText(block: any): string {
+  const parts = [
+    block?.content,
+    block?.prompt,
+    block?.text,
+    block?.name,
+    ...(Array.isArray(block?.injectionTrigger) ? block.injectionTrigger : [])
+  ];
+  return parts.filter((part) => typeof part === "string" && part.trim()).join("\n");
+}
+
+async function presetContractAudit(
+  profile: MeguminProfile,
+  customEngines: EngineMode[],
+  chatMessages: ChatMessage[],
+  context: ChatContext,
+  userId?: string
+): Promise<PresetContractAudit> {
+  const available = await hasPresetAccess();
+  const presentPlaceholders = new Set<string>();
+  const scannedPresetIds: string[] = [];
+  const scannedPresetNames: string[] = [];
+
+  if (available) {
+    const presets = await Promise.all([
+      findMeguminPreset("suite-ds4", userId).catch(() => null),
+      findMeguminPreset("suite-gemini", userId).catch(() => null)
+    ]);
+    for (const preset of presets) {
+      if (!preset?.id || scannedPresetIds.includes(preset.id)) continue;
+      scannedPresetIds.push(preset.id);
+      scannedPresetNames.push(preset.name || preset.id);
+      let searchableText = presetBlockText(preset);
+      try {
+        const blocks = await spindle.presets.blocks.list(preset.id, userId);
+        searchableText += "\n" + (blocks || [])
+          .filter((block: any) => block?.enabled !== false)
+          .map(presetBlockText)
+          .join("\n");
+      } catch (err) {
+        spindle.log.warn(`Megumin preset block audit failed for ${preset.name || preset.id}: ${String(err)}`);
+      }
+      for (const feature of REQUIRED_PLACEHOLDER_FEATURES) {
+        for (const placeholder of feature.placeholders) {
+          if (searchableText.includes(placeholder)) presentPlaceholders.add(placeholder);
+        }
+      }
+    }
+  }
+
+  const features = REQUIRED_PLACEHOLDER_FEATURES.map((feature) => {
+    const placeholders = [...feature.placeholders];
+    const present = placeholders.filter((placeholder) => presentPlaceholders.has(placeholder));
+    const missing = placeholders.filter((placeholder) => !presentPlaceholders.has(placeholder));
+    return {
+      id: feature.id,
+      label: feature.label,
+      placeholders,
+      present,
+      missing,
+      connected: missing.length === 0
+    };
+  });
+  const hasScannedPreset = scannedPresetIds.length > 0;
+  const estimateSet = hasScannedPreset ? presentPlaceholders : undefined;
+  return {
+    available,
+    scannedPresetIds,
+    scannedPresetNames,
+    presentPlaceholders: [...presentPlaceholders].sort(),
+    missingPlaceholders: [...new Set(features.flatMap((feature) => feature.missing))].sort(),
+    missingFeatures: features.filter((feature) => !feature.connected).map((feature) => feature.id),
+    features,
+    payloadEstimateTokens: estimateMeguminPayloadTokens(profile, customEngines, chatMessages, context, estimateSet),
+    payloadEstimateSource: hasScannedPreset ? "preset-audit" : "fallback",
+    updatedAt: Date.now()
   };
 }
 
@@ -514,6 +621,27 @@ async function generateImagePromptFromChat(profile: MeguminProfile, messages: Ch
   ], { backend: profile.imageGen.generatorBackend, presetKind: "image", userId, trigger: "imagePrompt" });
 }
 
+async function generateWritingStyleRule(input: any, userId?: string): Promise<string> {
+  const name = String(input?.name || "Custom AI Style").trim();
+  const notes = String(input?.notes || "").trim();
+  const tags = Array.isArray(input?.tags) ? input.tags.map(String).filter(Boolean) : [];
+  const tagText = tags.length ? tags.join(", ") : "cinematic prose, grounded character behavior, natural pacing";
+  const orderText = `Inspired by ${notes || name}. Write a writing style rule based on: ${tagText}. Direct instructions only. 2-3 paragraphs. No fluff.`;
+  return generateQuiet([
+    { role: "system", content: "You write concise Megumin Suite writing-style directives. Return only the directive text." },
+    { role: "user", content: orderText }
+  ], { backend: "preset", presetKind: "engine", userId, trigger: "dummyOrder" });
+}
+
+async function generateWritingStyleInsights(input: any, userId?: string): Promise<string> {
+  const notes = String(input?.notes || "").trim();
+  const name = String(input?.name || "Custom AI Style").trim();
+  return generateQuiet([
+    { role: "system", content: "Suggest concise writing-style inspirations for Megumin Suite. Return 2 author/style influences and 5 short style tags, comma-separated." },
+    { role: "user", content: `Style name: ${name}\nNotes: ${notes || "No notes yet. Suggest grounded cinematic prose options."}` }
+  ], { backend: "preset", presetKind: "engine", userId, trigger: "dummyOrder" });
+}
+
 async function handlePostGeneration(chatId: string): Promise<void> {
   const context = await getChatContext(chatId);
   const profile = await loadProfile(context.scope);
@@ -540,6 +668,8 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
   switch (payload.type) {
     case "bootstrap": {
       const profile = await loadProfile(context.scope);
+      const customEngines = await getCustomEngines();
+      const chatMessages = await getMessages(context.chatId);
       let imageConnections: any[] = [];
       try {
         imageConnections = await spindle.imageGen.listConnections(userId);
@@ -550,11 +680,12 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
         context,
         profile,
         logic: getLogic(),
-        engines: allEngines(await getCustomEngines()),
-        customEngines: await getCustomEngines(),
+        engines: allEngines(customEngines),
+        customEngines,
         imageConnections,
         uiAssets: await loadUiAssets(context),
-        presetBridge: await presetBridgeStatus(userId)
+        presetBridge: await presetBridgeStatus(userId),
+        presetAudit: await presetContractAudit(profile, customEngines, chatMessages, context, userId)
       };
     }
     case "profile:save": {
@@ -633,8 +764,33 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
       npc.pfp = image.imageUrl || "";
       return { profile: await saveProfile(context.scope, profile), image };
     }
+    case "npc:uploadPortrait": {
+      if (!context.chatId) throw new Error("Open a chat before uploading portraits");
+      const name = String((payload.payload as any)?.name || "");
+      const dataUrl = String((payload.payload as any)?.dataUrl || "");
+      const filename = String((payload.payload as any)?.filename || "npc-portrait.png");
+      if (!dataUrl.startsWith("data:image/")) throw new Error("Choose an image file for the NPC portrait");
+      const profile = await loadProfile(context.scope);
+      const npc = profile.npcBank.npcs.find((item) => item.name === name);
+      if (!npc) throw new Error("NPC not found");
+      const uploaded = await spindle.images.uploadFromDataUrl(dataUrl, {
+        originalFilename: filename,
+        owner_chat_id: context.chatId,
+        owner_character_id: context.characterId || undefined
+      });
+      npc.pfpImageId = uploaded?.id;
+      npc.pfpImageUrl = uploaded?.url;
+      npc.pfp = uploaded?.url || "";
+      return { profile: await saveProfile(context.scope, profile), image: uploaded };
+    }
     case "image:connections": {
       return { imageConnections: await spindle.imageGen.listConnections(userId) };
+    }
+    case "image:prompt": {
+      if (!context.chatId) throw new Error("Open a chat before generating an image prompt");
+      const profile = await loadProfile(context.scope);
+      const messages = await getMessages(context.chatId);
+      return { prompt: await generateImagePromptFromChat(profile, messages, userId) };
     }
     case "image:manual": {
       if (!context.chatId) throw new Error("Open a chat before generating an image");
@@ -645,6 +801,16 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
       const image = await generateImageForChat(context.scope, context.chatId, prompt, target?.id);
       return { image };
     }
+    case "style:generate": {
+      return { rule: await generateWritingStyleRule(payload.payload, userId) };
+    }
+    case "style:insights": {
+      return { insights: await generateWritingStyleInsights(payload.payload, userId) };
+    }
+    case "prompt:dryRun": {
+      if (!context.chatId) throw new Error("Open a chat before previewing the prompt");
+      return spindle.generate.dryRun({ chatId: context.chatId }, userId);
+    }
     case "preset:resolve": {
       const kind = ((payload.payload as any)?.kind === "image" ? "image" : "engine") as PresetKind;
       const preset = await resolveMeguminPreset(kind, userId);
@@ -652,6 +818,12 @@ async function rpc(payload: RpcEnvelope, userId?: string): Promise<unknown> {
     }
     case "preset:status":
       return { presetBridge: await presetBridgeStatus(userId) };
+    case "preset:audit": {
+      const profile = await loadProfile(context.scope);
+      const customEngines = await getCustomEngines();
+      const chatMessages = await getMessages(context.chatId);
+      return { presetAudit: await presetContractAudit(profile, customEngines, chatMessages, context, userId), presetBridge: await presetBridgeStatus(userId) };
+    }
     default:
       throw new Error(`Unknown Megumin RPC: ${payload.type}`);
   }
@@ -669,6 +841,18 @@ function messagesContainText(messages: any[], text: string): boolean {
       return content.some((part) => typeof part?.text === "string" && part.text.includes(text));
     }
     return false;
+  });
+}
+
+function previewMessageText(messages: any[]): Array<{ role: string; content: string }> {
+  return messages.slice(0, 40).map((message) => {
+    const content = message?.content;
+    const text = typeof content === "string"
+      ? content
+      : Array.isArray(content)
+        ? content.map((part: any) => part?.text || "").join("\n")
+        : "";
+    return { role: String(message?.role || "system"), content: text.slice(0, 12000) };
   });
 }
 
@@ -695,6 +879,16 @@ spindle.registerInterceptor(async (messages: any[], generationContext: any) => {
   const customEngines = await getCustomEngines();
   const chatMessages = await getMessages(context.chatId);
   const result = buildPromptMessages(messages, chatMessages, profile, customEngines, context);
+  if (profile.toggles.promptPreview) {
+    spindle.sendToFrontend({
+      type: "prompt:preview",
+      payload: {
+        estimatedInjectionTokens: result.estimatedInjectionTokens,
+        breakdown: result.breakdown,
+        messages: previewMessageText(result.messages)
+      }
+    }, generationContext?.userId);
+  }
   return {
     messages: result.messages,
     breakdown: result.breakdown

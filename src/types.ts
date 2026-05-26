@@ -164,6 +164,9 @@ export interface PromptBuildResult {
   messages: LlmMessage[];
   breakdown: Array<{ messageIndex: number; name: string }>;
   prunedCount: number;
+  replacementsMade: number;
+  changedMessages: Array<{ messageIndex: number; replacementsMade: number }>;
+  estimatedInjectionTokens: number;
 }
 
 export interface RpcEnvelope<T = unknown> {
