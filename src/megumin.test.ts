@@ -75,7 +75,10 @@ describe("Megumin UI parity audit", () => {
       "heroName",
       "updateSaveIndicator",
       "statusClearTimer",
-      "shouldRenderAfterBind"
+      "shouldRenderAfterBind",
+      "syncRangeInput",
+      "::-webkit-slider-thumb",
+      "::-moz-range-thumb"
     ];
     for (const label of requiredLabels) expect(frontendSource).toContain(label);
 

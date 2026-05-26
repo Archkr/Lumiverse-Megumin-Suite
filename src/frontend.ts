@@ -464,8 +464,22 @@ function heroName(): string {
   return state.context?.chatName || "Global Default";
 }
 
+function syncRangeInput(input: HTMLInputElement) {
+  const min = Number(input.min || 0);
+  const max = Number(input.max || 100);
+  const value = Number(input.value || min);
+  const span = max - min;
+  const percent = span > 0 ? Math.max(0, Math.min(100, ((value - min) / span) * 100)) : 0;
+  input.style.setProperty("--range-fill", `${percent}%`);
+}
+
+function syncRangeInputs(container: HTMLElement) {
+  container.querySelectorAll<HTMLInputElement>('input[type="range"]').forEach(syncRangeInput);
+}
+
 function wire(container: HTMLElement) {
   mountDnrPanel(container);
+  syncRangeInputs(container);
   container.querySelector<HTMLElement>(".meg-overlay")?.addEventListener("click", (event) => {
     if (event.target !== event.currentTarget) return;
     void closeApp({ save: true });
@@ -487,6 +501,7 @@ function wire(container: HTMLElement) {
       const path = input.dataset.bind!;
       const value = readInputValue(input);
       setPath(state.profile as any, path, value);
+      if (input instanceof HTMLInputElement && input.type === "range") syncRangeInput(input);
       saveProfileSoon();
       if (shouldRenderAfterBind(input)) render();
     });
@@ -494,6 +509,7 @@ function wire(container: HTMLElement) {
       input.addEventListener("input", () => {
         const path = input.dataset.bind!;
         setPath(state.profile as any, path, readInputValue(input));
+        if (input instanceof HTMLInputElement && input.type === "range") syncRangeInput(input);
         if (path === "dnRatio.dialogue") updateDnrUi(container, Number(readInputValue(input)));
         saveProfileSoon();
       });
@@ -2593,6 +2609,16 @@ function styles(): string {
 .ps-modern-input { width:100%; box-sizing:border-box; background:#0e0e11; border:1px solid #27272a; color:#f4f4f5; border-radius:8px; padding:10px 12px; font:inherit; font-size:13px; text-transform:none; outline:none; }
 .ps-modern-input:focus { border-color:#f59e0b; box-shadow:0 0 0 3px rgba(245,158,11,.12); }
 textarea.ps-modern-input { min-height:108px; resize:vertical; line-height:1.45; }
+.meg-overlay input[type="range"] { --range-fill:0%; -webkit-appearance:none; appearance:none; width:100%; height:18px; padding:0; border:0; background:transparent; cursor:pointer; accent-color:var(--gold); }
+.meg-overlay input[type="range"]:focus { outline:none; box-shadow:none; }
+.meg-overlay input[type="range"]::-webkit-slider-runnable-track { height:4px; border-radius:999px; background:linear-gradient(to right, var(--gold) 0%, var(--gold) var(--range-fill), #27272a var(--range-fill), #27272a 100%); box-shadow:inset 0 1px 1px rgba(0,0,0,.55); }
+.meg-overlay input[type="range"]::-webkit-slider-thumb { -webkit-appearance:none; appearance:none; width:16px; height:16px; border-radius:50%; background:var(--gold); border:3px solid var(--bg-panel); box-shadow:0 0 0 1px rgba(245,158,11,.55), 0 3px 10px rgba(0,0,0,.65); margin-top:-6px; transition:transform .15s ease, box-shadow .15s ease; }
+.meg-overlay input[type="range"]:hover::-webkit-slider-thumb { transform:scale(1.08); box-shadow:0 0 0 1px rgba(245,158,11,.7), 0 0 12px rgba(245,158,11,.35), 0 4px 12px rgba(0,0,0,.7); }
+.meg-overlay input[type="range"]::-moz-range-track { height:4px; border-radius:999px; background:#27272a; box-shadow:inset 0 1px 1px rgba(0,0,0,.55); }
+.meg-overlay input[type="range"]::-moz-range-progress { height:4px; border-radius:999px; background:var(--gold); }
+.meg-overlay input[type="range"]::-moz-range-thumb { width:10px; height:10px; border-radius:50%; background:var(--gold); border:3px solid var(--bg-panel); box-shadow:0 0 0 1px rgba(245,158,11,.55), 0 3px 10px rgba(0,0,0,.65); transition:transform .15s ease, box-shadow .15s ease; }
+.meg-overlay input[type="range"]:hover::-moz-range-thumb { transform:scale(1.08); box-shadow:0 0 0 1px rgba(245,158,11,.7), 0 0 12px rgba(245,158,11,.35), 0 4px 12px rgba(0,0,0,.7); }
+.mtab-param-row input[type="range"], .wstyle-dnr-slider-track input[type="range"] { flex:1; min-width:0; }
 .textarea-xl { min-height:280px !important; }
 .dev-area { min-height:90px !important; font-family:ui-monospace, SFMono-Regular, Consolas, monospace; font-size:12px; }
 .setting-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin:8px 0 12px; }
@@ -2686,7 +2712,7 @@ pre { white-space:pre-wrap; color:#d4d4d8; margin:0; padding:12px; border-top:1p
 .wstyle-dnr-body { padding:0 20px 20px; display:none; }
 .wstyle-dnr-body.open { display:block; }
 .wstyle-dnr-slider-track { display:flex; align-items:center; gap:14px; background:rgba(0,0,0,.25); padding:14px 16px; border-radius:10px; border:1px solid var(--border-color); }
-.wstyle-dnr-slider-track input[type="range"] { flex:1; accent-color:var(--gold); cursor:pointer; }
+.wstyle-dnr-slider-track input[type="range"] { flex:1; }
 .wstyle-dnr-label { font-size:.78rem; font-weight:700; white-space:nowrap; min-width:100px; }
 .wstyle-dnr-label.narr { color:#a855f7; text-align:right; }
 .wstyle-dnr-label.dial { color:#10b981; }
