@@ -414,7 +414,7 @@ function wire(container: HTMLElement) {
     }
   });
   container.querySelector<HTMLElement>("#dnr_header_toggle")?.addEventListener("click", (event) => {
-    if ((event.target as HTMLElement).closest("button,input,select,textarea")) return;
+    if ((event.target as HTMLElement).closest("#dnr_toggle,[data-action],input,select,textarea")) return;
     state.profile.dnRatio.enabled = !state.profile.dnRatio.enabled;
     saveProfileSoon();
     render();
@@ -1023,12 +1023,22 @@ function renderStyle(): string {
     ${presetFeatureWarning(["writing-style"])}
     <div class="wstyle-dnr-panel">
       <div class="wstyle-dnr-header" id="dnr_header_toggle">
-        <div class="dnr-info"><div class="dnr-icon">${icon("fa-scale-balanced")}</div><div><strong>Dialogue / Narration Ratio</strong><small>Fine-tune the balance between spoken dialogue and descriptive prose.</small></div></div>
-        <button type="button" class="ps-toggle-card ${state.profile.dnRatio.enabled ? "active" : ""}" id="dnr_toggle" data-action="toggle" data-path="dnRatio.enabled"><span class="ps-switch"></span></button>
+        <div class="dnr-info">
+          <div class="dnr-icon">${icon("fa-scale-balanced")}</div>
+          <div>
+            <div style="font-weight: 700; font-size: 0.9rem; color: var(--text-main);">Dialogue / Narration Ratio</div>
+            <div style="font-size: 0.73rem; color: var(--text-muted);">Fine‑tune the balance between spoken dialogue and descriptive prose.</div>
+          </div>
+        </div>
+        <div class="ps-toggle-card ${state.profile.dnRatio.enabled ? "active" : ""}" id="dnr_toggle" data-action="toggle" data-path="dnRatio.enabled" style="padding: 8px; min-width: 56px; justify-content: center; cursor: pointer;">
+          <div class="ps-switch"></div>
+        </div>
       </div>
       <div class="wstyle-dnr-body ${state.profile.dnRatio.enabled ? "open" : ""}" id="dnr_body">
         <div class="wstyle-dnr-slider-track"><span class="wstyle-dnr-label narr"><span id="lbl_narr">${100 - state.profile.dnRatio.dialogue}</span>% Narration</span><input type="range" id="dnr_slider" min="0" max="100" step="10" data-bind="dnRatio.dialogue" value="${state.profile.dnRatio.dialogue}"><span class="wstyle-dnr-label dial"><span id="lbl_dial">${state.profile.dnRatio.dialogue}</span>% Dialogue</span></div>
-        <div class="dnr-preview" id="dnr_preview">Preview -> "Maintain a balance of <span id="lbl_prev_d">${state.profile.dnRatio.dialogue}</span>% Dialogue and <span id="lbl_prev_n">${100 - state.profile.dnRatio.dialogue}</span>% Narration."</div>
+        <div id="dnr_preview" style="font-size: 0.7rem; color: var(--text-muted); text-align: center; margin-top: 10px; font-family: monospace; opacity: 0.7;">
+          Preview → "Maintain a balance of <span id="lbl_prev_d">${state.profile.dnRatio.dialogue}</span>% Dialogue and <span id="lbl_prev_n">${100 - state.profile.dnRatio.dialogue}</span>% Narration."
+        </div>
       </div>
     </div>
     ${presetFeatureWarning(["dialogue-narration"])}
@@ -2240,7 +2250,7 @@ function styles(): string {
 .meg-float-btn .meg-wand path:last-child { fill:#fbbf24; stroke:#fbbf24; }
 .meg-fa { width:16px; height:16px; flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; line-height:1; }
 .meg-svg { width:16px; height:16px; flex:0 0 auto; fill:currentColor; stroke:none; }
-.meg-overlay { --bg-panel:#18181b; --bg-main:#0e0e11; --border-color:#27272a; --text-main:#f4f4f5; --text-muted:#a1a1aa; --gold:#f59e0b; position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.72); backdrop-filter:blur(5px); font-family:Inter, ui-sans-serif, system-ui, sans-serif; color:#f4f4f5; }
+.meg-overlay { --bg-panel:#18181b; --bg-main:#0e0e11; --border-color:#27272a; --text-main:#f4f4f5; --text-muted:#a1a1aa; --accent-color:#ffffff; --gold:#f59e0b; position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.72); backdrop-filter:blur(5px); font-family:Inter, ui-sans-serif, system-ui, sans-serif; color:#f4f4f5; }
 .ps-modern-modal.app-container { width:1050px; max-width:95vw; height:85vh; max-height:850px; background:var(--bg-panel); border:1px solid var(--border-color); border-radius:16px; box-shadow:0 25px 50px -12px rgba(0,0,0,.7); display:flex; flex-direction:column; position:relative; overflow:hidden; }
 .main-wrapper { flex:1; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
 .hero-banner { height:200px; width:100%; background-position:center 25%; background-size:cover; position:relative; display:flex; flex-direction:column; justify-content:space-between; flex-shrink:0; background-color:#111; }
@@ -2335,10 +2345,10 @@ function styles(): string {
 .toggle-info { display:flex; flex-direction:column; gap:4px; min-width:0; }
 .toggle-label { color:#fff; font-size:13px; font-weight:900; }
 .toggle-desc { color:#a1a1aa; font-size:12px; line-height:1.4; }
-.ps-switch { width:38px; height:22px; border-radius:999px; background:#3f3f46; position:relative; flex:0 0 auto; transition:.18s; }
-.ps-switch::after { content:""; width:18px; height:18px; border-radius:50%; background:#fff; position:absolute; top:2px; left:2px; transition:.18s; }
+.ps-switch { width:44px; height:24px; border-radius:12px; background:#3f3f46; position:relative; flex:0 0 auto; transition:.3s; }
+.ps-switch::after { content:""; width:20px; height:20px; border-radius:50%; background:#fff; position:absolute; top:2px; left:2px; transition:.3s; box-shadow:0 2px 4px rgba(0,0,0,.2); }
 .mtab-toggle-row.active .ps-switch { background:#f59e0b; }
-.mtab-toggle-row.active .ps-switch::after { left:18px; background:#111; }
+.mtab-toggle-row.active .ps-switch::after { left:22px; background:#111; }
 .mtab-panel, .wstyle-dnr-panel { background:#18191f; border:1px solid #27272a; border-radius:8px; padding:16px; }
 .mtab-panel-title { margin:0 0 14px; color:#f4f4f5; font-weight:900; font-size:15px; display:flex; align-items:center; gap:8px; }
 .mtab-panel-title.gold { color:#f59e0b; }
@@ -2433,27 +2443,23 @@ pre { white-space:pre-wrap; color:#d4d4d8; margin:0; padding:12px; border-top:1p
 .off-left small { display:block; color:var(--text-muted); font-size:.75rem; margin-top:2px; }
 .off-icon { width:36px; height:36px; border-radius:10px; display:grid; place-items:center; background:rgba(161,161,170,.12); color:#a1a1aa; }
 .off-icon.blue { background:rgba(59,130,246,.18); color:#3b82f6; }
-.wstyle-dnr-panel { margin-bottom:14px; transition:border-color .25s ease, box-shadow .25s ease, background .25s ease; }
-.wstyle-dnr-panel:has(.wstyle-dnr-body.open) { border-color:rgba(245,158,11,.35); box-shadow:0 0 24px rgba(245,158,11,.08); background:linear-gradient(180deg,rgba(245,158,11,.035),#18191f 62%); }
-.wstyle-dnr-header { display:flex; justify-content:space-between; align-items:center; gap:12px; cursor:pointer; }
-.dnr-info { display:flex; align-items:center; gap:12px; }
-.dnr-info strong { display:block; font-size:.9rem; }
-.dnr-info small { display:block; color:var(--text-muted); font-size:.73rem; margin-top:2px; }
-.dnr-icon { width:34px; height:34px; border-radius:10px; display:grid; place-items:center; background:rgba(245,158,11,.13); color:var(--gold); }
-.ps-toggle-card { border:1px solid var(--border-color); border-radius:10px; background:transparent; padding:8px; min-width:56px; display:flex; justify-content:center; cursor:pointer; }
-.ps-toggle-card.active { border-color:rgba(245,158,11,.45); }
-.ps-toggle-card.active .ps-switch { background:#f59e0b; }
-.ps-toggle-card.active .ps-switch::after { left:18px; background:#111; }
-.wstyle-dnr-body { max-height:0; overflow:hidden; opacity:0; padding-top:0; margin-top:0; border-top:1px dashed transparent; transition:max-height .28s ease, opacity .2s ease, padding-top .28s ease, margin-top .28s ease, border-color .28s ease; }
-.wstyle-dnr-body.open { max-height:110px; opacity:1; padding-top:15px; margin-top:12px; border-top-color:var(--border-color); }
-.wstyle-dnr-slider-track { display:flex; align-items:center; gap:12px; }
-.wstyle-dnr-slider-track input { flex:1; accent-color:var(--gold); }
-.wstyle-dnr-slider-track input[type="range"]::-webkit-slider-thumb { cursor:pointer; box-shadow:0 0 0 4px rgba(245,158,11,.13); }
-.wstyle-dnr-slider-track input[type="range"]::-moz-range-thumb { cursor:pointer; box-shadow:0 0 0 4px rgba(245,158,11,.13); }
-.wstyle-dnr-label { color:var(--text-muted); font-size:.72rem; white-space:nowrap; }
-.wstyle-dnr-label.dial { color:#3b82f6; }
-.wstyle-dnr-label.narr { color:var(--gold); }
-.dnr-preview { font-size:.7rem; color:var(--text-muted); text-align:center; margin-top:10px; font-family:ui-monospace,Consolas,monospace; opacity:.78; }
+.ps-toggle-card { display:flex; justify-content:space-between; align-items:center; background:var(--bg-main); border:1px solid var(--border-color); border-radius:12px; padding:18px 24px; cursor:pointer; transition:.2s; }
+.ps-toggle-card:hover { border-color:#52525b; }
+.ps-toggle-card.active { border-color:var(--accent-color); background:#27272a; }
+.ps-toggle-card.active .ps-switch { background:var(--accent-color); }
+.ps-toggle-card.active .ps-switch::after { left:22px; background:#000; }
+.wstyle-dnr-panel { background:var(--bg-main); border:1px solid var(--border-color); border-radius:14px; overflow:hidden; margin-bottom:8px; padding:0; }
+.wstyle-dnr-header { display:flex; justify-content:space-between; align-items:center; padding:16px 20px; cursor:pointer; transition:background .2s; }
+.wstyle-dnr-header:hover { background:rgba(255,255,255,.02); }
+.wstyle-dnr-header .dnr-info { display:flex; align-items:center; gap:12px; }
+.wstyle-dnr-header .dnr-icon { width:36px; height:36px; border-radius:10px; background:linear-gradient(135deg,rgba(245,158,11,.15),rgba(245,158,11,.05)); display:flex; align-items:center; justify-content:center; color:var(--gold); font-size:.95rem; }
+.wstyle-dnr-body { padding:0 20px 20px; display:none; }
+.wstyle-dnr-body.open { display:block; }
+.wstyle-dnr-slider-track { display:flex; align-items:center; gap:14px; background:rgba(0,0,0,.25); padding:14px 16px; border-radius:10px; border:1px solid var(--border-color); }
+.wstyle-dnr-slider-track input[type="range"] { flex:1; accent-color:var(--gold); cursor:pointer; }
+.wstyle-dnr-label { font-size:.78rem; font-weight:700; white-space:nowrap; min-width:100px; }
+.wstyle-dnr-label.narr { color:#a855f7; text-align:right; }
+.wstyle-dnr-label.dial { color:#10b981; }
 .preset-warning { margin:0 0 14px; }
 .wstyle-gen-card, .wstyle-create-card { display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid var(--border-color); border-radius:14px; background:var(--bg-main); padding:16px 18px; color:var(--text-main); cursor:pointer; text-align:left; }
 .wstyle-create-card { justify-content:center; border-style:dashed; color:#10b981; font-weight:800; }
