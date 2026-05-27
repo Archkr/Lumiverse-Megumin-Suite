@@ -905,14 +905,13 @@ spindle.registerInterceptor(async (messages: any[], generationContext: any) => {
       type: "prompt:preview",
       payload: {
         estimatedInjectionTokens: result.estimatedInjectionTokens,
-        breakdown: result.breakdown,
+        changedMessages: result.changedMessages,
         messages: previewMessageText(result.messages)
       }
     }, generationContext?.userId);
   }
   return {
-    messages: result.messages,
-    breakdown: result.breakdown
+    messages: result.messages
   };
 }, 40);
 

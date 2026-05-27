@@ -656,22 +656,19 @@ export function buildPromptMessages(
   const indexMap = new Map<number, number>();
   indexedMessages.forEach((entry, resultIndex) => indexMap.set(entry.originalIndex, resultIndex));
 
-  const breakdown = replaced.changedMessages
+  const changedMessages = replaced.changedMessages
     .map((entry) => {
       const messageIndex = indexMap.get(entry.messageIndex);
-      return messageIndex === undefined ? null : {
-        messageIndex,
-        name: `Megumin Suite Placeholder Injection (${entry.replacementsMade})`
-      };
+      return messageIndex === undefined ? null : { messageIndex, replacementsMade: entry.replacementsMade };
     })
-    .filter((entry): entry is { messageIndex: number; name: string } => !!entry);
+    .filter((entry): entry is { messageIndex: number; replacementsMade: number } => !!entry);
 
   return {
     messages: resultMessages,
-    breakdown,
+    breakdown: [],
     prunedCount,
     replacementsMade: replaced.replacementsMade,
-    changedMessages: breakdown.map((entry) => ({ messageIndex: entry.messageIndex, replacementsMade: Number(entry.name.match(/\((\d+)\)/)?.[1] || 0) })),
+    changedMessages,
     estimatedInjectionTokens: estimateMeguminPayloadTokens(profile, customEngines, chatMessages, context)
   };
 }

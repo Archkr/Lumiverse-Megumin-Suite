@@ -315,7 +315,8 @@ describe("Megumin prompt assembly", () => {
     const result = buildPromptMessages(incoming, chatMessages, profile, [], context);
     const joined = result.messages.map((message) => typeof message.content === "string" ? message.content : "").join("\n");
 
-    expect(result.breakdown.length).toBe(5);
+    expect(result.breakdown).toHaveLength(0);
+    expect(result.changedMessages).toHaveLength(5);
     expect(joined).toContain("ALL OUTPUT EXCEPT THINKING MUST BE IN FRENCH ONLY");
     expect(joined).toContain("{{user}} is male. Always portray and address him as such.");
     expect(joined).toContain("— maximum 420 words");
@@ -337,7 +338,7 @@ describe("Megumin prompt assembly", () => {
     }
   });
 
-  test("keeps breakdown attribution for every changed uploaded preset message", () => {
+  test("tracks changed uploaded preset messages without duplicating them in Prompt Breakdown", () => {
     const profile = mergeProfile({ userLanguage: "Spanish", userWordCount: 250 });
     const result = buildPromptMessages([
       { role: "system", content: "[[Language]]" },
@@ -345,7 +346,8 @@ describe("Megumin prompt assembly", () => {
       { role: "system", content: "Plain unchanged block" }
     ], [], profile, [], context);
 
-    expect(result.breakdown.map((entry) => entry.messageIndex)).toEqual([0, 1]);
+    expect(result.breakdown).toEqual([]);
+    expect(result.changedMessages.map((entry) => entry.messageIndex)).toEqual([0, 1]);
     expect(result.replacementsMade).toBeGreaterThanOrEqual(2);
     expect(result.estimatedInjectionTokens).toBeGreaterThan(0);
   });
@@ -446,7 +448,8 @@ describe("Megumin prompt assembly", () => {
     expect(joined).toContain("ruby key unlocks the archive shrine");
     expect(joined).not.toContain("[[long-Memory]]");
     expect(result.messages.some((message) => message.content === chatMessages[0].content)).toBe(false);
-    expect(result.breakdown.some((entry) => entry.name?.includes("Placeholder Injection"))).toBe(true);
+    expect(result.changedMessages.length).toBeGreaterThan(0);
+    expect(result.breakdown.some((entry) => entry.name?.includes("Placeholder Injection"))).toBe(false);
   });
 });
 
